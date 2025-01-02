@@ -14,6 +14,8 @@ preferred_language_attribute = "name:latin"
 default_language_attribute = "name_int"
 -- Also write these languages if they differ - for example, { "de", "fr" }
 additional_languages = { }
+
+POSTAL_MIN_ZOOM = 6
 --------
 
 -- Enter/exit Tilemaker
@@ -302,7 +304,7 @@ waterwayClasses = Set { "stream", "river", "canal", "drain", "ditch" }
 -- Scan relations for use in ways
 
 function relation_scan_function()
-	if Find("type")=="boundary" and Find("boundary")=="administrative" then
+	if Find("type")=="boundary" and (Find("boundary")=="administrative" or Find("boundary")=="postal_code") then
 		Accept()
 	end
 end
@@ -406,6 +408,7 @@ function way_function()
 	-- note that we process administrative boundaries as properties on ways, rather than as single relation geometries,
 	--  because otherwise we get multiple renderings where boundaries are coterminous
 	local admin_level = 11
+	local postal_code_level = 11
 	local isBoundary = false
 	local isBoundaryNRW = false
 	while true do
@@ -414,13 +417,17 @@ function way_function()
 		isBoundary = true
 		local relAdminLevel = tonumber(FindInRelation("admin_level"))
 		admin_level = math.min(admin_level, relAdminLevel or 11)
+		postal_code_level = math.min(postal_code_level, tonumber(FindInRelation("postal_code_level")) or 11)
 		isBoundaryNRW = isBoundaryNRW or (FindInRelation("name:de") == "Nordrhein-Westfalen" and relAdminLevel == 4)
 	end
 
 	-- Boundaries in ways
 	if boundary=="administrative" then
 		admin_level = math.min(admin_level, tonumber(Find("admin_level")) or 11)
+		postal_code_level = math.min(postal_code_level, tonumber(Find("postal_code_level")) or 11)
 		isBoundary = true
+	elseif boundary=="postal_code" then
+		postal_code_level = math.min(postal_code_level, tonumber(Find("postal_code_level")) or 11)
 	end
 
 	-- Administrative boundaries
@@ -447,6 +454,13 @@ function way_function()
 		if isBoundaryNRW then
 			AttributeNumeric("is_nrw", 1)
 		end
+	end
+
+	-- Postal codes
+	if postal_code_level < 11 then
+		Layer("boundary_postal_code", false)
+		AttributeNumeric("postal_code_level", postal_code_level)
+		MinZoom(POSTAL_MIN_ZOOM)
 	end
 
 	-- Aerialways ('transportation' and 'transportation_name')
