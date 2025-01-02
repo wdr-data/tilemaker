@@ -2,6 +2,7 @@
 	"layers": {
 		"place":            { "minzoom":  0, "maxzoom": 14 },
 		"boundary":         { "minzoom":  0, "maxzoom": 14, "simplify_below": 12, "simplify_level": 0.0003, "simplify_ratio": 2, "simplify_algorithm": "visvalingam" },
+		"boundary_postal_code":         { "minzoom":  0, "maxzoom": 14, "simplify_below": 12, "simplify_level": 0.0003, "simplify_ratio": 2, "simplify_algorithm": "visvalingam" },
 
 		"poi":              { "minzoom": 12, "maxzoom": 14 },
 		"poi_detail":       { "minzoom": 14, "maxzoom": 14, "write_to": "poi"},
