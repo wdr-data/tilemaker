@@ -19,3 +19,5 @@ include/vector_tile.pb.h
 coastline
 landcover
 /test.*
+*.mbtiles
+*.osm.pbf
