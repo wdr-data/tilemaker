@@ -407,11 +407,14 @@ function way_function()
 	--  because otherwise we get multiple renderings where boundaries are coterminous
 	local admin_level = 11
 	local isBoundary = false
+	local isBoundaryNRW = false
 	while true do
 		local rel = NextRelation()
 		if not rel then break end
 		isBoundary = true
-		admin_level = math.min(admin_level, tonumber(FindInRelation("admin_level")) or 11)
+		local relAdminLevel = tonumber(FindInRelation("admin_level"))
+		admin_level = math.min(admin_level, relAdminLevel or 11)
+		isBoundaryNRW = isBoundaryNRW or (FindInRelation("name:de") == "Nordrhein-Westfalen" and relAdminLevel == 4)
 	end
 
 	-- Boundaries in ways
@@ -439,6 +442,10 @@ function way_function()
 			AttributeNumeric("disputed", 1)
 		else
 			AttributeNumeric("disputed", 0)
+		end
+
+		if isBoundaryNRW then
+			AttributeNumeric("is_nrw", 1)
 		end
 	end
 
