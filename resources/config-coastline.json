@@ -1,7 +1,7 @@
 {
 	"layers": {
 		"water":       { "minzoom": 6,  "maxzoom": 14, "simplify_below": 12, "simplify_level": 0.0003, "simplify_ratio": 2 },
-		"ocean":       { "minzoom": 0,  "maxzoom": 14, "source": "coastline/water_polygons.shp", "filter_below": 12, "filter_area": 0.5, 
+		"ocean":       { "minzoom": 0,  "maxzoom": 14, "source": "coastline/water_polygons.shp", "filter_below": 12, "filter_area": 0.5,
 		                 "simplify_below": 13, "simplify_level": 0.0001, "simplify_ratio": 2, "write_to": "water" },
 		"landuse":     { "minzoom":  4, "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0003, "simplify_ratio": 2 },
 		"urban_areas": { "minzoom":  4, "maxzoom":  8, "source": "landcover/ne_10m_urban_areas/ne_10m_urban_areas.shp", "source_columns": ["featurecla"], "simplify_below": 7, "simplify_level": 0.0003, "simplify_ratio": 2, "write_to": "landuse" },
@@ -11,19 +11,19 @@
 	},
 	"settings": {
 		"minzoom": 0,
-		"maxzoom": 14,
-		"basezoom": 14,
+		"maxzoom": 12,
+		"basezoom": 12,
 		"include_ids": false,
-		"combine_below": 14,
+		"combine_below": 12,
 		"name": "Coastline",
 		"version": "3.0",
 		"description": "Coastline, low-resolution urban areas and ice shelves/glaciers",
 		"compress": "gzip",
 		"filemetadata": {
-			"tilejson": "2.0.0", 
-			"scheme": "xyz", 
-			"type": "baselayer", 
-			"format": "pbf", 
+			"tilejson": "2.0.0",
+			"scheme": "xyz",
+			"type": "baselayer",
+			"format": "pbf",
             "tiles": ["https://example.com/liechtenstein/{z}/{x}/{y}.pbf"]
 		}
 	}
