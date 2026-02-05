@@ -356,6 +356,26 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	end
 end
 
+-- German federal states (Bundesländer) - ISO 3166-2:DE codes
+germanStates = {
+	["Baden-Württemberg"] = "bw",
+	["Bayern"] = "by",
+	["Berlin"] = "be",
+	["Brandenburg"] = "bb",
+	["Bremen"] = "hb",
+	["Hamburg"] = "hh",
+	["Hessen"] = "he",
+	["Mecklenburg-Vorpommern"] = "mv",
+	["Niedersachsen"] = "ni",
+	["Nordrhein-Westfalen"] = "nw",
+	["Rheinland-Pfalz"] = "rp",
+	["Saarland"] = "sl",
+	["Sachsen"] = "sn",
+	["Sachsen-Anhalt"] = "st",
+	["Schleswig-Holstein"] = "sh",
+	["Thüringen"] = "th"
+}
+
 -- Process way tags
 
 function way_function()
@@ -410,7 +430,7 @@ function way_function()
 	local admin_level = 11
 	local postal_code_level = 11
 	local isBoundary = false
-	local isBoundaryNRW = false
+	local bundeslaender = {}
 	while true do
 		local rel = NextRelation()
 		if not rel then break end
@@ -418,7 +438,12 @@ function way_function()
 		local relAdminLevel = tonumber(FindInRelation("admin_level"))
 		admin_level = math.min(admin_level, relAdminLevel or 11)
 		postal_code_level = math.min(postal_code_level, tonumber(FindInRelation("postal_code_level")) or 11)
-		isBoundaryNRW = isBoundaryNRW or (FindInRelation("name:de") == "Nordrhein-Westfalen" and relAdminLevel == 4)
+		if relAdminLevel == 4 then
+			local stateName = FindInRelation("name:de")
+			if germanStates[stateName] then
+				bundeslaender[germanStates[stateName]] = true
+			end
+		end
 	end
 
 	-- Boundaries in ways
@@ -451,8 +476,14 @@ function way_function()
 			AttributeInteger("disputed", 0)
 		end
 
-		if isBoundaryNRW then
-			AttributeNumeric("is_nrw", 1)
+		-- Collect all state codes and output as sorted, comma-separated list
+		local stateList = {}
+		for state, _ in pairs(bundeslaender) do
+			table.insert(stateList, state)
+		end
+		if #stateList > 0 then
+			table.sort(stateList)
+			Attribute("bundesland", table.concat(stateList, ","))
 		end
 	end
 
