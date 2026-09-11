@@ -21,3 +21,19 @@ landcover
 /test.*
 *.mbtiles
 *.osm.pbf
+
+/store/
+
+# Python build pipeline and local configuration
+.env
+.env.*
+!.env.example
+.venv/
+.tools/
+__pycache__/
+*.py[cod]
+/tilesets/
+/osm/*.build.json
+/osm/*.part
+/osm/*.md5
+.ruff_cache/

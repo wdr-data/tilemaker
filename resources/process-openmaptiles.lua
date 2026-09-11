@@ -755,8 +755,7 @@ function way_function()
 			Layer("landuse", true)
 			Attribute("class", l)
 			if l=="residential" then
-				if Area()<ZRES8^2 then MinZoom(8)
-				else SetMinZoomByArea() end
+				SetResidentialMinZoom()
 			else MinZoom(11) end
 			write_name = true
 		end
@@ -873,6 +872,16 @@ function SetBrunnelAttributes()
 end
 
 -- Set minimum zoom level by area
+-- Show individual OSM residential patches from the regional overview.
+-- Keep the smallest patches for z7/8 instead of packing subpixel polygons
+-- into every low-zoom tile. Natural Earth supplies the z4/5 overview only.
+function SetResidentialMinZoom()
+	local area = Area()
+	if     area >= (ZRES8 / 2)^2 then MinZoom(6)
+	elseif area >= (ZRES9 / 2)^2 then MinZoom(7)
+	else                            MinZoom(8) end
+end
+
 function SetMinZoomByArea()
 	SetMinZoomByAreaWithLimit(0)
 end

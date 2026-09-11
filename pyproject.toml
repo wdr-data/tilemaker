@@ -1,0 +1,47 @@
+[project]
+name = "wdr-tiles"
+version = "0.1.0"
+description = "Readable build pipeline for the WDR regional MBTiles"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.1,<9",
+    "pydantic>=2.10,<3",
+    "pydantic-settings>=2,<3",
+    "structlog>=26,<27",
+]
+
+[project.scripts]
+tiles = "wdr_tiles.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.26,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["python/wdr_tiles"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.7",
+    "ty>=0.0.80",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["python"]
+extend-exclude = [".tools"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "ANN"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ty.environment]
+python-version = "3.11"
+root = ["./python"]
+
+[tool.ty.src]
+include = ["python", "test"]
