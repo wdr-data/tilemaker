@@ -37,3 +37,4 @@ __pycache__/
 /osm/*.part
 /osm/*.md5
 .ruff_cache/
+/logs/
