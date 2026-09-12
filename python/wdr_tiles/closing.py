@@ -2,13 +2,14 @@
 
 import json
 import os
+import pickle
 import shutil
 import time
-from collections import deque
 from collections.abc import Mapping
-from concurrent.futures import Future, ProcessPoolExecutor, TimeoutError
+from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from contextlib import ExitStack
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TextIO, TypedDict
 
 import pyproj
@@ -103,49 +104,83 @@ class MaskWriters:
 def write_masks(
     database: Path, cells: list[geometry.Cell], directory: Path, workers: int
 ) -> list[MaskSource]:
+    """Refill on completion; spool out-of-order results to keep RAM bounded."""
+    if workers < 1:
+        raise ValueError("Closing requires at least one worker")
     started = time.monotonic()
     with ExitStack() as stack:
         writers = MaskWriters(directory, stack)
+        # A slow cell must not hold up scheduling. Completed results wait on
+        # disk until they can be appended in the original, stable cell order.
+        spool = Path(
+            stack.enter_context(TemporaryDirectory(prefix=".cells-", dir=directory))
+        )
         with ProcessPoolExecutor(max_workers=workers) as pool:
-            jobs = iter(cells)
-            pending: deque[tuple[geometry.Cell, Future[dict[int, bytes]]]] = deque()
+            jobs = iter(enumerate(cells))
+            pending: dict[Future[dict[int, bytes]], tuple[int, geometry.Cell]] = {}
             for _ in range(min(len(cells), workers * 2)):
-                cell = next(jobs)
-                pending.append(
-                    (cell, pool.submit(geometry.process_cell, database, cell))
+                index, cell = next(jobs)
+                pending[pool.submit(geometry.process_cell, database, cell)] = (
+                    index,
+                    cell,
                 )
-            completed = 0
+            ready: set[int] = set()
+            completed = written = 0
             last_log = started
             while pending:
-                cell, future = pending.popleft()
-                while True:
+                done, _ = wait(pending, timeout=60, return_when=FIRST_COMPLETED)
+                if not done:
+                    log.info(
+                        "built_up.running",
+                        completed=completed,
+                        written=written,
+                        buffered_cells=len(ready),
+                        in_flight=len(pending),
+                        oldest_cell=min(pending.values())[1],
+                        total=len(cells),
+                        elapsed_seconds=round(time.monotonic() - started, 1),
+                    )
+                for future in done:
+                    index, cell = pending.pop(future)
                     try:
-                        masks = future.result(timeout=60)
-                        break
-                    except TimeoutError:
-                        log.info(
-                            "built_up.running",
-                            cell=cell,
-                            completed=completed,
-                            total=len(cells),
-                            elapsed_seconds=round(time.monotonic() - started, 1),
-                        )
-                writers.append(masks)
-                completed += 1
+                        masks = future.result()
+                    except Exception as error:
+                        raise ValueError(f"Closing failed in cell {cell}") from error
+                    with (spool / str(index)).open("wb") as output:
+                        pickle.dump(masks, output, protocol=pickle.HIGHEST_PROTOCOL)
+                    ready.add(index)
+                    completed += 1
+                    # Refill for every finished task, even if earlier output
+                    # is still missing. The old FIFO loop starved the pool here.
+                    job = next(jobs, None)
+                    if job is not None:
+                        next_index, next_cell = job
+                        pending[
+                            pool.submit(geometry.process_cell, database, next_cell)
+                        ] = next_index, next_cell
+                # Futures retain their result until released. Don't keep the
+                # completed batch alive while flushing a potentially long spool.
+                done.clear()
+                while written in ready:
+                    path = spool / str(written)
+                    with path.open("rb") as source:
+                        # Only read results we just wrote inside this private directory.
+                        writers.append(pickle.load(source))
+                    path.unlink()
+                    ready.remove(written)
+                    written += 1
                 if time.monotonic() - last_log >= 60 or completed == len(cells):
                     log.info(
                         "built_up.progress",
                         completed=completed,
+                        written=written,
+                        buffered_cells=len(ready),
+                        in_flight=len(pending),
                         total=len(cells),
                         files=len(writers.sources),
                         elapsed_seconds=round(time.monotonic() - started, 1),
                     )
                     last_log = time.monotonic()
-                cell = next(jobs, None)
-                if cell is not None:
-                    pending.append(
-                        (cell, pool.submit(geometry.process_cell, database, cell))
-                    )
         return writers.sources
 
 

@@ -333,6 +333,14 @@ This avoids a continent-wide GEOS union and shapefile size limits.
 `BUILT_UP_WORKERS` defaults to the smaller of `THREADS` and 16. Work in flight is
 bounded to twice the worker count; output is written in a stable cell order.
 The same setting controls polygon indexing and closing, which run sequentially.
+Closing refills the worker queue whenever any cell finishes. Out-of-order results
+wait in temporary files, so a slow cell does not leave the other workers idle.
+Output is still appended in the original cell order. Allow additional scratch
+space for these buffered results; in the worst case they can accumulate most of
+the remaining mask data behind one slow cell. They are removed after writing
+or failure and are not resumable checkpoints.
+Closing progress distinguishes `completed` computation from `written` cells,
+with `buffered_cells` and `in_flight` counts to explain any output backlog.
 Indexing keeps one SQLite writer with a 64 MiB page cache and at most twice the
 worker count in flight (roughly 4 MiB of source text per batch, except unusually
 large individual features). Polygon order and IDs are preserved.
