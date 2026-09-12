@@ -156,7 +156,7 @@ above. Settings are listed in `.env.example`.
 
 The code is split by responsibility: `cli.py` wires commands, `settings.py`
 loads settings, `pipeline.py` lists the steps, `setup.py` prepares tools/static data, `inputs.py` downloads and renumbers OSM,
-`closing.py` prepares overview masks, `closing_geometry.py` processes one spatial chunk,
+`closing.py` prepares overview masks, `indexing.py` prepares their spatial index, `closing_geometry.py` processes one spatial chunk,
 `logging.py` configures structlog, `state.py` handles native commands/resume/publication, and `mbtiles.py` removes overlaps.
 
 ## Memory and runtime
@@ -321,8 +321,10 @@ existing forest-matched simplification still applies after closing. Buffering
 can absorb small holes or green corridors; separate landcover and water fills
 should remain above the built-up fill in the map style.
 
-`prepare-built-up` streams an Osmium polygon export into a SQLite spatial index,
-then processes half-degree cells with a 2 km halo. All cells use the same metric
+`prepare-built-up` reads an Osmium polygon export in bounded batches. Worker
+processes parse, validate/repair and serialize polygons; one writer inserts
+ordered batches into a SQLite spatial index.
+It then processes half-degree cells with a 2 km halo. All cells use the same metric
 European projection (EPSG:3035). Results are clipped to exact cell boundaries
 and streamed into four GeoJSONL files under `OUTPUT_DIR/built-up/`. Tilemaker
 unions the pieces again before simplification, removing internal chunk edges.
@@ -330,7 +332,11 @@ This avoids a continent-wide GEOS union and shapefile size limits.
 
 `BUILT_UP_WORKERS` defaults to the smaller of `THREADS` and 16. Work in flight is
 bounded to twice the worker count; output is written in a stable cell order.
-The cloud example explicitly uses 16 workers. `built_up.indexing`,
+The same setting controls polygon indexing and closing, which run sequentially.
+Indexing keeps one SQLite writer with a 64 MiB page cache and at most twice the
+worker count in flight (roughly 4 MiB of source text per batch, except unusually
+large individual features). Polygon order and IDs are preserved.
+The cloud example explicitly uses 16 workers. `built_up.indexing` (including input-byte progress),
 `built_up.running` and `built_up.progress` events report progress at roughly
 60-second intervals; completion records elapsed time and cell/file counts.
 Native filtering and export have their own stage logs.

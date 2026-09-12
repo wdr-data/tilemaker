@@ -3,20 +3,19 @@
 import json
 import os
 import shutil
-import sqlite3
 import time
 from collections import deque
 from collections.abc import Mapping
 from concurrent.futures import Future, ProcessPoolExecutor, TimeoutError
-from contextlib import ExitStack, closing
+from contextlib import ExitStack
 from pathlib import Path
 from typing import TextIO, TypedDict
 
 import pyproj
 import shapely
-from shapely.geometry import shape
 
 from . import closing_geometry as geometry
+from .indexing import index_polygons
 from .logging import log
 from .preview import BUILT_UP_CLASSES
 from .settings import Settings
@@ -44,6 +43,7 @@ def build_record(settings: Settings, source: Path) -> dict[str, object]:
         "osmium_sha256": digest(osmium),
         "code_sha256": digest(__file__),
         "geometry_sha256": digest(geometry.__file__),
+        "indexing_sha256": digest(Path(__file__).with_name("indexing.py")),
         "classes": sorted(BUILT_UP_CLASSES),
         "shapely": shapely.__version__,
         "geos": shapely.geos_version_string,
@@ -70,53 +70,6 @@ def validate(directory: Path, record: dict[str, object]) -> Manifest:
             f"Stale or incomplete built-up masks in {directory}; choose a new OUTPUT_DIR."
         ) from error
     return manifest
-
-
-def index_polygons(source: Path, database: Path) -> list[geometry.Cell]:
-    """Stream filtered GeoJSON into a disk-backed spatial index."""
-    cells: set[geometry.Cell] = set()
-    count = repaired = 0
-    last_log = time.monotonic()
-    with closing(sqlite3.connect(database)) as db, db:
-        db.execute("PRAGMA journal_mode=OFF")  # Private, disposable scratch index.
-        db.execute("CREATE TABLE polygons(id INTEGER PRIMARY KEY, geometry BLOB)")
-        db.execute("CREATE VIRTUAL TABLE bounds USING rtree(id,minx,maxx,miny,maxy)")
-        with source.open() as stream:
-            for line in stream:
-                feature = json.loads(line)
-                if geometry.selected_class(feature["properties"]) is None:
-                    continue
-                polygon = shape(feature["geometry"])
-                if not polygon.is_valid:
-                    polygon = shapely.make_valid(polygon)
-                    repaired += 1
-                for part in geometry.polygons(polygon):
-                    west, south, east, north = part.bounds
-                    if not (
-                        -180 <= west <= east <= 180 and -85 <= south <= north <= 85
-                    ):
-                        raise ValueError(
-                            f"Unsupported built-up geometry bounds: {part.bounds}"
-                        )
-                    count += 1
-                    db.execute(
-                        "INSERT INTO polygons VALUES (?,?)",
-                        (count, shapely.to_wkb(part)),
-                    )
-                    db.execute(
-                        "INSERT INTO bounds VALUES (?,?,?,?,?)",
-                        (count, west, east, south, north),
-                    )
-                    cells.update(
-                        geometry.covering_cells(
-                            geometry.padded_bounds((west, south, east, north))
-                        )
-                    )
-                if time.monotonic() - last_log >= 60:
-                    log.info("built_up.indexing", polygons=count, cells=len(cells))
-                    last_log = time.monotonic()
-    log.info("built_up.indexed", polygons=count, cells=len(cells), repaired=repaired)
-    return sorted(cells)
 
 
 class MaskWriters:
@@ -246,7 +199,7 @@ def prepare(settings: Settings, source: Path, directory: Path) -> Manifest:
             ],
         )
         database = work / "polygons.sqlite"
-        cells = index_polygons(geojson, database)
+        cells = index_polygons(geojson, database, settings.built_up_workers)
         filtered.unlink()
         geojson.unlink()
         sources = write_masks(database, cells, work, settings.built_up_workers)
