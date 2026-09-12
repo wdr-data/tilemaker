@@ -147,7 +147,10 @@ class ConfigurationTest(unittest.TestCase):
             root = Path(tmp)
             result = CliRunner().invoke(main, ["--project-dir", str(root), "plan"])
             self.assertEqual(result.exit_code, 0, result.output)
-            self.assertIn("coastline → europe → dach → nrw → merge", result.output)
+            self.assertIn(
+                "coastline → built-up masks → europe → dach → nrw → merge",
+                result.output,
+            )
             self.assertFalse((root / "tilesets").exists())
 
     def test_run_orders_dependencies_before_build_and_merge(self) -> None:
@@ -224,8 +227,8 @@ class ResumeTest(unittest.TestCase):
                 ),
             ):
                 with self.assertRaisesRegex(ValueError, "native failure"):
-                    pipeline.build("europe")
-            self.assertFalse(settings.output("europe").exists())
+                    pipeline.build("dach")
+            self.assertFalse(settings.output("dach").exists())
             self.assertEqual(list(settings.output_dir.iterdir()), [])
 
     def test_changed_source_during_build_is_not_published(self) -> None:
@@ -244,8 +247,8 @@ class ResumeTest(unittest.TestCase):
                 patch("wdr_tiles.pipeline.run_command"),
             ):
                 with self.assertRaisesRegex(ValueError, "changed during"):
-                    pipeline.build("europe")
-            self.assertFalse(settings.output("europe").exists())
+                    pipeline.build("dach")
+            self.assertFalse(settings.output("dach").exists())
 
 
 class DownloadTest(unittest.TestCase):

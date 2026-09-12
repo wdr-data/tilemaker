@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 from typing import TypedDict
 
+from . import closing as built_up
 from . import inputs, preview, setup
 from .logging import log
 from .mbtiles import disjoint
@@ -112,6 +113,11 @@ class Pipeline:
                 )
             publish(output, settings.nrw, record)
 
+    def prepare_built_up(self) -> None:
+        built_up.prepare(
+            self.settings, self.settings.europe, self.settings.output_dir / "built-up"
+        )
+
     def build_record(self, profile: str) -> TileBuildRecord:
         settings = self.settings
         config: TileConfig = json.loads(settings.config(profile).read_text())
@@ -123,8 +129,15 @@ class Pipeline:
                     file_record(source.with_suffix(ext))
                     for ext in setup.SHAPE_EXTENSIONS
                 )
+        if profile == "europe":
+            directory = settings.output_dir / "built-up"
+            manifest = built_up.validate(
+                directory, built_up.build_record(settings, settings.europe)
+            )
+            static_files.extend(manifest["files"])
+            static_files.append(file_record(directory / "manifest.json"))
         return {
-            "version": 1,
+            "version": 2,
             "step": profile,
             "config_sha256": digest(settings.config(profile)),
             "lua_sha256": digest(settings.process(profile)),
@@ -138,18 +151,30 @@ class Pipeline:
 
     def build(self, profile: str) -> None:
         settings = self.settings
+        if profile == "europe":
+            self.prepare_built_up()
         record = self.build_record(profile)
         destination = settings.output(profile)
         if reusable(destination, record):
             return
         with workspace(destination) as work:
             output = work / "output.mbtiles"
+            config_path = settings.config(profile)
+            if profile == "europe":
+                config: TileConfig = json.loads(config_path.read_text())
+                directory = settings.output_dir / "built-up"
+                manifest = built_up.validate(
+                    directory, built_up.build_record(settings, settings.europe)
+                )
+                built_up.add_layers(config, directory, manifest)
+                config_path = work / "config.json"
+                config_path.write_text(json.dumps(config, indent=2))
             args: list[CommandArg] = [
                 settings.tilemaker,
                 "--output",
                 output,
                 "--config",
-                settings.config(profile),
+                config_path,
                 "--process",
                 settings.process(profile),
                 "--threads",
@@ -270,6 +295,9 @@ class Pipeline:
         config["settings"].update(
             minzoom=6, maxzoom=11 if landuse == "built-up" else 9, basezoom=12
         )
+        mask_directory = directory / "built-up"
+        manifest = built_up.prepare(settings, renumbered, mask_directory)
+        built_up.add_layers(config, mask_directory, manifest)
         config_path = directory / "config.json"
         config_path.write_text(json.dumps(config, indent=2))
         after = directory / "after.mbtiles"

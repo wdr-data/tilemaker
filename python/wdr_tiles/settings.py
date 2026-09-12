@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     )
     geofabrik_date: str = Field("", validation_alias="GEOFABRIK_DATE")
     output_dir: Path = Field(
-        Path("tilesets/v4-candidate"), validation_alias="OUTPUT_DIR"
+        Path("tilesets/closing-candidate"), validation_alias="OUTPUT_DIR"
     )
     europe: Path = Field(
         default_factory=lambda data: Path(
@@ -58,6 +58,11 @@ class Settings(BaseSettings):
         default_factory=lambda: min(os.cpu_count() or 4, 8),
         ge=1,
         validation_alias="THREADS",
+    )
+    built_up_workers: int = Field(
+        default_factory=lambda data: min(data["threads"], 16),
+        ge=1,
+        validation_alias="BUILT_UP_WORKERS",
     )
     compile_jobs: int = Field(
         default_factory=lambda: min(os.cpu_count() or 4, 16),
@@ -87,6 +92,7 @@ class Settings(BaseSettings):
         "nrw",
         "threads",
         "compile_jobs",
+        "built_up_workers",
         "fast",
         "store",
         "install_system_packages",

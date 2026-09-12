@@ -79,13 +79,16 @@ def plan(pipeline: Pipeline) -> None:
     """Show configuration and build order without changing files."""
     s = pipeline.settings
     click.echo(f"Repository: {s.root}\nOutput: {s.output_dir}")
+    click.echo(
+        f"Built-up workers: {s.built_up_workers}; closing z6–9: 100/75/50/25 metres"
+    )
     click.echo(f"Threads: {s.threads}; fast: {s.fast}; storage: {s.store or 'RAM'}")
     click.echo(
         f"Geofabrik snapshot: {s.geofabrik_date or 'disabled (use renumbered inputs)'}"
     )
     click.echo(f"Europe: {s.europe}\nDACH: {s.dach}\nNRW extract: {s.nrw}")
     click.echo(
-        "Order: setup → download → extract-nrw → coastline → europe → dach → nrw → merge"
+        "Order: setup → download → extract-nrw → coastline → built-up masks → europe → dach → nrw → merge"
     )
     click.echo("Matching completed steps are reused. No overzoom tiles are generated.")
 
@@ -132,6 +135,13 @@ def extract_nrw(pipeline: Pipeline) -> None:
 
 
 @main.command()
+@locked
+def prepare_built_up(pipeline: Pipeline) -> None:
+    """Prepare reusable Europe overview masks (also automatic in build europe/run)."""
+    pipeline.prepare_built_up()
+
+
+@main.command()
 @click.argument("profile", type=click.Choice(PROFILES))
 @locked
 def build(pipeline: Pipeline, profile: str) -> None:
@@ -164,7 +174,7 @@ def merge(pipeline: Pipeline) -> None:
     type=click.Choice(["residential", "built-up"]),
     default="built-up",
     show_default=True,
-    help="Built-up compares the union and original classes at z6–11. Residential only omits the combined overview mask.",
+    help="Built-up compares the overview mask and original classes at z6–11. Residential only omits the combined overview mask.",
 )
 @locked
 def preview(

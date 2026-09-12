@@ -873,18 +873,14 @@ function SetBrunnelAttributes()
 	end
 end
 
--- The overview alias writes into landuse only at z6-9. Every selected polygon
--- enters at z6 so small parcels can join their neighbours BEFORE simplification.
--- At z10+, emit original classes instead. These are separate input layers with
--- disjoint zoom ranges: the mask never stacks over its constituent polygons.
+-- Overview masks are prepared by the Python pipeline from unsimplified OSM
+-- polygons, with 100/75/50/25 metre closing at z6/7/8/9. Only the original
+-- detail classes are emitted here, so they never stack over the overview mask.
 function WriteLanduse(class)
 	Layer("landuse", true)
 	Attribute("class", class)
 	if builtUpLanduseKeys[class] then
 		MinZoom(10)
-		Layer("landuse_built_up", true)
-		Attribute("class", "built_up")
-		MinZoom(6)
 	else
 		MinZoom(11)
 	end
