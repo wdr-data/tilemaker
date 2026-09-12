@@ -217,6 +217,7 @@ def prepare(settings: Settings, source: Path, directory: Path) -> Manifest:
             f"wr/{key}={classes}"
             for key in ("landuse", "natural", "leisure", "amenity", "tourism")
         ]
+        expressions.extend(["wr/highway=pedestrian", "wr/area:highway=pedestrian"])
         run_command(
             settings,
             "built-up-filter",

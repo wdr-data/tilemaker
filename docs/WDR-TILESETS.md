@@ -287,6 +287,16 @@ scale parent geometry into each missing child, preserve every real child tile,
 and account for storage growth. Copying parent tile bytes to child coordinates
 or indiscriminately overzooming all merged inputs is not correct.
 
+## Rivers at the NRW overview
+
+Named OSM `waterway=river` lines start at z7, so rivers such as the Rhine
+remain visible when the full state is shown. This selects named rivers, not
+only large rivers; streams, canals, drains, ditches and unnamed river lines
+remain in the detail input starting at z12. River labels keep their existing
+thresholds. Water polygons still use their area thresholds; the river lines
+provide continuity when individual polygon sections are too small to survive.
+The app's existing waterway style already draws these lines at z7.
+
 ## Built-up land on a green background
 
 Use a green background and an explicit bright fill for built-up classes.
@@ -332,6 +342,20 @@ spatial index are deleted on success. Allow scratch space for these intermediate
 in `OUTPUT_DIR`, as well as the persistent GeoJSONL files. The local preview
 checks correctness; it does not establish full-Europe runtime or peak storage.
 
+Paved pedestrian polygons are also included in the z6–9 mask, accepting both
+`highway=pedestrian` + `area=yes` and `area:highway=pedestrian`. Only explicitly
+hard-surfaced areas qualify; covered and underground areas are excluded.
+At z10+ these surfaces are emitted as `transportation/class=path`,
+`subclass=pedestrian` polygons, without an area-based delay at the handover.
+The detailed style needs a transportation polygon fill (the existing broad
+`road_area` fill works). Unpaved/unspecified surfaces retain their detailed
+transportation behavior at z14. No pedestrian labels are added.
+
+`landuse=quarry` is emitted separately as `landuse/class=quarry`, using the
+existing area thresholds: large sites can appear at z6/7, smaller ones later.
+Quarries retain their outlines and are excluded from settlement closing. Add
+`quarry` to a style filter or give it its own fill; it is not part of `built_up`.
+
 Complete normal OSM landuse class selection:
 
 | Original classes | Overview z6–9 | Detail |
@@ -339,6 +363,7 @@ Complete normal OSM landuse class selection:
 | `residential`, `commercial`, `industrial`, `retail` | Combined `built_up` | Original classes from z10 |
 | `railway`, `bus_station` | Combined `built_up` | Original classes from z10; land areas, not railway lines |
 | `school`, `university`, `college`, `kindergarten`, `library`, `hospital` | Combined `built_up` | Original classes from z10; draw separate campus greenery above the fill |
+| `quarry` | Separate `quarry`, according to area | Same class and area thresholds; no closing |
 | `cemetery`, `pitch`, `playground` | Excluded | Original classes from z11; keep green or style separately |
 | `military`, `stadium`, `theme_park`, `zoo` | Excluded | Original classes from z11; mixed grounds often contain open space |
 
@@ -361,8 +386,8 @@ uv run tiles preview --before tilesets/nrw-v4.mbtiles \
   --landuse built-up
 ```
 
-The default `built-up` preview compares the mask and original bright-fill classes
-at z6–11, including the z9→10 handover. `--landuse residential` only shows original
+The default `built-up` preview compares the mask, original bright-fill classes
+and pedestrian transportation polygons at z6–11, including the z9→10 handover. `--landuse residential` only shows original
 residential polygons (z6–9); the combined candidate mask cannot be separated into
 residential polygons anymore and is therefore omitted in that diagnostic.
 The HTML enlarges selected polygons to the same extent; also review `after.mbtiles`

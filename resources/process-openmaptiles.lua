@@ -237,7 +237,7 @@ railwayClasses  = { rail="rail", narrow_gauge="rail", preserved="rail", funicula
 aerowayBuildings= Set { "terminal", "gate", "tower" }
 landuseKeys     = Set { "school", "university", "kindergarten", "college", "library", "hospital",
                         "railway", "cemetery", "military", "residential", "commercial", "industrial",
-                        "retail", "stadium", "pitch", "playground", "theme_park", "bus_station", "zoo" }
+                        "retail", "stadium", "pitch", "playground", "theme_park", "bus_station", "zoo", "quarry" }
 -- Bright built-up fill at overview zooms. Keep mixed/open grounds out:
 -- cemetery, military, stadium, pitch, playground, theme_park and zoo.
 -- Preserve the original class so map styles can still distinguish each use.
@@ -315,6 +315,15 @@ function relation_scan_function()
 	end
 end
 
+-- Explicit hard surfaces only; buried/covered pedestrian areas must not
+-- become bright land in the overview. Match closing_geometry.py's selection.
+function IsBuiltUpPedestrianArea()
+	return pavedValues[Find("surface")]
+		and (Find("tunnel")=="" or Find("tunnel")=="no")
+		and (Find("covered")=="" or Find("covered")=="no")
+		and (tonumber(Find("layer")) or 0)>=0
+end
+
 function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, service, is_rail, is_road, is_area)
 	Layer("transportation", is_area)
 	SetZOrder()
@@ -327,7 +336,12 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	SetBrunnelAttributes()
 	-- We do not write any other attributes for areas.
 	if is_area then
-		SetMinZoomByAreaWithLimit(minzoom)
+		if highway_class=="path" and subclass=="pedestrian" and IsBuiltUpPedestrianArea() then
+			-- Take over from the closed overview at z10 without an area-based gap.
+			MinZoom(10)
+		else
+			SetMinZoomByAreaWithLimit(minzoom)
+		end
 		return
 	end
 	MinZoom(minzoom)
@@ -407,6 +421,7 @@ function way_function()
 	local public_transport  = Find("public_transport")
 	local place = Find("place")
 	local is_closed = IsClosed()
+	local area_highway = Find("area:highway")
 	local housenumber = Find("addr:housenumber")
 	local write_name = false
 	local construction = Find("construction")
@@ -513,10 +528,14 @@ function way_function()
 	end
 
 	-- Roads ('transportation' and 'transportation_name')
+	-- A separately mapped pedestrian surface may have no highway tag at all.
+	if highway=="" and area_highway=="pedestrian" and is_closed then
+		highway="pedestrian"
+	end
 	if highway ~= "" or public_transport == "platform" then
 		local access = Find("access")
 		local surface = Find("surface")
-		local is_area = (public_transport == "platform" or Find("area")=="yes") and is_closed
+		local is_area = (public_transport == "platform" or Find("area")=="yes" or area_highway=="pedestrian") and is_closed
 
 		local h = highway
 		local is_road = true
@@ -879,7 +898,10 @@ end
 function WriteLanduse(class)
 	Layer("landuse", true)
 	Attribute("class", class)
-	if builtUpLanduseKeys[class] then
+	if class=="quarry" then
+		-- Keep extraction sites separate from settlements and preserve their outline.
+		SetMinZoomByArea()
+	elseif builtUpLanduseKeys[class] then
 		MinZoom(10)
 	else
 		MinZoom(11)

@@ -51,6 +51,7 @@ class Feature(TypedDict):
 
 
 class DecodedLayer(TypedDict):
+    properties: dict[str, object]
     features: list[Feature]
 
 
@@ -71,6 +72,7 @@ def features(
     zoom: int,
     decoder: str,
     classes: frozenset[str] = frozenset({"residential"}),
+    include_pedestrian: bool = False,
 ) -> list[Feature]:
     west, south, east, north = bbox
     left, top = tile_xy(west, north, zoom)
@@ -83,8 +85,7 @@ def features(
                 [
                     decoder,
                     "-f",
-                    "-l",
-                    "landuse",
+                    *([] if include_pedestrian else ["-l", "landuse"]),
                     str(tileset),
                     str(zoom),
                     str(x),
@@ -97,11 +98,23 @@ def features(
             tile: DecodedTile = json.loads(proc.stdout)
 
             for layer in tile["features"]:
-                result.extend(
-                    f
-                    for f in layer["features"]
-                    if str(f["properties"].get("class")) in classes
-                )
+                layer_name = layer["properties"]["layer"]
+                for feature in layer["features"]:
+                    if feature["geometry"]["type"] not in ("Polygon", "MultiPolygon"):
+                        continue
+                    properties = feature["properties"]
+                    landuse_match = (
+                        layer_name == "landuse"
+                        and str(properties.get("class")) in classes
+                    )
+                    pedestrian_match = (
+                        include_pedestrian
+                        and layer_name == "transportation"
+                        and properties.get("class") == "path"
+                        and properties.get("subclass") == "pedestrian"
+                    )
+                    if landuse_match or pedestrian_match:
+                        result.append(feature)
 
     return result
 
@@ -154,7 +167,17 @@ def render(
     sections = []
     for z in zooms:
         panels = [
-            svg_panel(features(path, bbox, z, decoder, classes), bbox)
+            svg_panel(
+                features(
+                    path,
+                    bbox,
+                    z,
+                    decoder,
+                    classes,
+                    include_pedestrian=landuse == "built-up",
+                ),
+                bbox,
+            )
             for path in [before, after]
         ]
         sections.append(
@@ -164,7 +187,7 @@ def render(
         """<!doctype html><meta charset="utf-8"><title>Land-use geometry comparison</title>
 <style>body{font:16px system-ui;margin:32px;background:#fff;color:#303438}h1{font-size:24px}h2{font-size:17px}p{max-width:1000px;line-height:1.5}section{display:none;gap:24px}section.active{display:flex}section>div{width:50%;min-width:0}svg{width:100%;border:1px solid #ddd}select{font:inherit;padding:6px}footer{margin-top:24px;color:#60666a;font-size:14px}</style>
 <h1>Land-use geometry comparison</h1>
-<p>Selected land-use polygons only, with identical colors and geographic extent. The selected source zoom is enlarged to make boundaries visible; this is not native map scale. Labels and other map layers are omitted from this diagnostic view.</p>
+<p>Selected land-use and pedestrian-area polygons only, with identical colors and geographic extent. The selected source zoom is enlarged to make boundaries visible; this is not native map scale. Labels and other map layers are omitted from this diagnostic view.</p>
 <label>Source zoom <select id="zoom">ZOOM_OPTIONS</select></label>
 """
         + "".join(sections)
@@ -173,7 +196,8 @@ def render(
     )
     html = html.replace("ZOOM_OPTIONS", "".join(f"<option>{z}</option>" for z in zooms))
     html = html.replace(
-        "Selected land-use polygons only", f"Classes: {', '.join(sorted(classes))}"
+        "Selected land-use polygons only",
+        f"Land-use classes: {', '.join(sorted(classes))}",
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(html)

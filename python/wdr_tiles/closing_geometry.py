@@ -23,6 +23,21 @@ RADII = {6: 100, 7: 75, 8: 50, 9: 25}
 CELL_DEGREES = 0.5
 HALO_METRES = 2000
 WATERWAYS = {"river", "riverbank", "stream", "canal", "drain", "ditch", "dock"}
+PAVED_SURFACES = frozenset(
+    {
+        "paved",
+        "asphalt",
+        "paving_stones",
+        "cobblestone",
+        "concrete",
+        "concrete:lanes",
+        "concrete:plates",
+        "metal",
+        "wood",
+        "sett",
+        "unhewn_cobblestone",
+    }
+)
 Cell = tuple[int, int]
 Bounds = tuple[float, float, float, float]
 
@@ -46,7 +61,27 @@ def selected_class(tags: Mapping[str, str]) -> str | None:
         ),
         "",
     )
-    return value if value in BUILT_UP_CLASSES else None
+    if value in BUILT_UP_CLASSES:
+        return value
+    # A green/mixed land-use tag takes precedence over the pedestrian surface.
+    if value:
+        return None
+    pedestrian_area = tags.get("area:highway") == "pedestrian" or (
+        tags.get("highway") == "pedestrian" and tags.get("area") == "yes"
+    )
+    try:
+        layer = float(tags.get("layer", "0"))
+    except ValueError:
+        layer = 0
+    if (
+        pedestrian_area
+        and tags.get("surface") in PAVED_SURFACES
+        and tags.get("tunnel", "") in {"", "no"}
+        and tags.get("covered", "") in {"", "no"}
+        and layer >= 0
+    ):
+        return "pedestrian"
+    return None
 
 
 def polygons(geometry: BaseGeometry) -> Iterator[Polygon]:
