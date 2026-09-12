@@ -157,6 +157,7 @@ above. Settings are listed in `.env.example`.
 The code is split by responsibility: `cli.py` wires commands, `settings.py`
 loads settings, `pipeline.py` lists the steps, `setup.py` prepares tools/static data, `inputs.py` downloads and renumbers OSM,
 `closing.py` prepares overview masks, `indexing.py` prepares their spatial index, `closing_geometry.py` processes one spatial chunk,
+`tile_repair.py` validates and repairs encoded overview tiles, `mvt.py` preserves their protobuf fields,
 `logging.py` configures structlog, `state.py` handles native commands/resume/publication, and `mbtiles.py` removes overlaps.
 
 ## Memory and runtime
@@ -237,6 +238,44 @@ layer would not appear in the requested output zooms.
 references, `write_to` targets, and matching landuse/landcover simplification.
 The generated overview inputs are checked by `test/test_landuse_zooms.py`;
 geometry, processing seams and mask publication are covered by `test/test_closing.py`.
+
+## Encoded overview geometry repair
+
+Europe builds and previews automatically repair `landuse/class=built_up` at
+zooms 6–9 after Tilemaker finishes. This runs on the final integer tile
+coordinates: even valid source masks can acquire self-intersections during
+Tilemaker's clipping, union and encoding operations. Such polygons can send
+MapLibre's triangulator into a very slow fallback. In the first closing
+candidate, a single polygon in tile `7/68/43` took about 23 seconds to triangulate.
+
+The repair preserves exterior/hole roles with Shapely's
+`make_valid(method="structure", keep_collapsed=False)`, then snaps to the
+one-unit tile grid with `set_precision`. Each changed polygon is encoded,
+decoded again, checked for validity and compared to the repaired geometry.
+This adds no simplification or morphological closing. Other layers, classes,
+feature attributes and zoom levels keep their original bytes. Tiles without
+invalid built-up polygons remain byte-identical, including compression.
+
+The step uses `BUILT_UP_WORKERS`, capped at 16, with a bounded queue and one
+SQLite writer. Changes happen in one transaction on the unpublished Europe
+file. Any error rolls back the repair and prevents publication. Repair runs
+before merge, so the merged candidate inherits the corrected geometry.
+
+`overview_repair.started`, `.progress`, `.running`, `.completed` and `.failed`
+events record progress, counts and failures. Tile errors use XYZ coordinates.
+The MBTiles metadata `wdr:geometry_repair` records the repair's code/library
+versions and counts; Europe's build record also includes that provenance.
+Repair code changes invalidate Europe outputs without invalidating reusable
+closing masks or the other regional builds. Previously generated files,
+including the manually repaired candidate, are not silently accepted under
+the new build record. Use a new output location for the next candidate.
+
+The checked-in regression tile and `test/test_tile_repair.py` cover the actual
+slow geometry, preservation of holes and non-target data, both ring windings,
+malformed input, transactional rollback, parallel processing and publication.
+The manual repair of the first candidate checked all 9,133 overview tiles;
+its slowest built-up triangulation was about 16 milliseconds locally. Runtime
+figures describe that dataset and machine, not a performance guarantee.
 
 ## Python development checks
 

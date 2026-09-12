@@ -3,10 +3,10 @@
 import json
 import shutil
 from pathlib import Path
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from . import closing as built_up
-from . import inputs, preview, setup
+from . import inputs, preview, setup, tile_repair
 from .logging import log
 from .mbtiles import disjoint
 from .settings import EXTRACT_BOUNDS, NRW_BOUNDS, PROFILES, Settings
@@ -40,6 +40,7 @@ class TileBuildRecord(TypedDict):
     static_files: list[FileRecord]
     tilemaker_sha256: str
     bbox: str | None
+    overview_repair: NotRequired[dict[str, object]]
 
 
 def executable_record(command: str) -> str:
@@ -136,7 +137,7 @@ class Pipeline:
             )
             static_files.extend(manifest["files"])
             static_files.append(file_record(directory / "manifest.json"))
-        return {
+        record: TileBuildRecord = {
             "version": 2,
             "step": profile,
             "config_sha256": digest(settings.config(profile)),
@@ -148,6 +149,10 @@ class Pipeline:
             "tilemaker_sha256": executable_record(settings.tilemaker),
             "bbox": {"nrw": NRW_BOUNDS, "coastline": "-180,-85,180,85"}.get(profile),
         }
+
+        if profile == "europe":
+            record["overview_repair"] = tile_repair.build_record()
+        return record
 
     def build(self, profile: str) -> None:
         settings = self.settings
@@ -200,6 +205,8 @@ class Pipeline:
                     )
             else:
                 run_command(settings, f"build-{profile}", args)
+            if profile == "europe":
+                tile_repair.repair_overviews(output, settings.built_up_workers)
             if record != self.build_record(profile):
                 raise ValueError(
                     f"Inputs/configuration changed during {profile}; output was not published."
@@ -321,6 +328,7 @@ class Pipeline:
                 settings.threads,
             ],
         )
+        tile_repair.repair_overviews(after, settings.built_up_workers)
         preview.render(
             before,
             after,
