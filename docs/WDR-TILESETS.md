@@ -181,7 +181,7 @@ this pipeline; do not size storage from the final MBTiles alone.
 | Input | Zooms | Purpose |
 | --- | --- | --- |
 | coastline | 0–12 | Global ocean/background shapes; urban outlines only at 4–5 |
-| Europe | 0–12 | OSM data; individual residential patches starting at 6 |
+| Europe | 0–12 | OSM data; individual built-up patches starting at 6 |
 | DACH | 13 | More detail outside the NRW buffer |
 | NRW buffer | 13–14 | Highest priority wherever a tile exists |
 
@@ -198,13 +198,13 @@ Natural Earth urban polygons through z8, which caused the broad grey blankets.
 
 Urban land-use and forest land-cover retain the same simplification:
 `simplify_below: 13`, `simplify_level: 0.0003`, default `simplify_ratio: 2`.
-Natural Earth urban shapes end at z5. OSM residential patches of about 0.093 km²
-and larger appear at z6, patches of about 0.023 km² at z7, and smaller patches at
-z8. Removing the blanket does not require finer urban boundaries than forests.
+Natural Earth urban shapes end at z5. At z6–9, selected OSM built-up polygons
+are unioned before simplification into `landuse/class=built_up`. At z10+ the
+original classes return. See the built-up section below for the selection.
 
 ## Why the regional configs differ
 
-The 20 OSM layer definitions are identical across Europe, DACH, and NRW.
+The 21 OSM layer definitions are identical across Europe, DACH, and NRW.
 The removed entries are shapefile inputs, some of which write into existing
 output layers using `write_to`:
 
@@ -256,7 +256,7 @@ uv run python -m unittest discover -s test -p 'test_*.py' -v
 ```
 
 The preview extracts a small Ruhr area from the configured DACH input and uses
-the production Lua with the Europe config limited to z6–9. Its `comparison.html`
+the production Lua with the Europe config limited to z6–11 by default. Its `comparison.html`
 enlarges identical extents at each source zoom to expose geometry changes. It
 is a geometry diagnostic, not a native-scale screenshot. Use `--bbox` to choose
 another area and a new `--directory` for each attempt.
@@ -280,3 +280,68 @@ Offline filling remains a possible future build step. It would need to clip and
 scale parent geometry into each missing child, preserve every real child tile,
 and account for storage growth. Copying parent tile bytes to child coordinates
 or indiscriminately overzooming all merged inputs is not correct.
+
+## Built-up land on a green background
+
+Use a green background and an explicit bright fill for built-up classes.
+At z6–9, the internal `landuse_built_up` layer unions selected polygons with
+identical `class=built_up` attributes, then writes into the existing `landuse`
+output layer. Polygon combining ends at z10 (`combine_polygons_below: 10`).
+The original classes start at z10, so the mask and originals never stack at the
+same zoom. All selected parcels enter the union at z6 regardless of area: filtering
+small parcels before union would prevent them from joining their neighbours.
+
+This is union only: no buffering, gap filling or morphological closing. Touching
+or overlapping parcels can join; separated parcels stay separate. The existing
+forest-matched simplification is unchanged. `combine_below` controls lines;
+polygon union requires the explicit `combine_polygons_below` setting.
+
+Complete normal OSM landuse class selection:
+
+| Original classes | Overview z6–9 | Detail |
+| --- | --- | --- |
+| `residential`, `commercial`, `industrial`, `retail` | Combined `built_up` | Original classes from z10 |
+| `railway`, `bus_station` | Combined `built_up` | Original classes from z10; land areas, not railway lines |
+| `school`, `university`, `college`, `kindergarten`, `library`, `hospital` | Combined `built_up` | Original classes from z10; draw separate campus greenery above the fill |
+| `cemetery`, `pitch`, `playground` | Excluded | Original classes from z11; keep green or style separately |
+| `military`, `stadium`, `theme_park`, `zoo` | Excluded | Original classes from z11; mixed grounds often contain open space |
+
+Styles must include `built_up` alongside the twelve original bright-fill classes
+in their `landuse` filter. Filling every landuse class also paints the seven
+excluded open/mixed uses as urban land. Natural Earth still supplies generalized
+`residential` shapes at z4–5; there is no urban fill below z4.
+
+Special `waterway=boatyard` and `waterway=fuel` mappings retain their `industrial`
+class at z12 and z14 respectively. This list describes this Lua mapping, not all
+possible OSM tags: `brownfield`, for example, is not emitted as a landuse polygon.
+Farmland is `landcover/class=farmland`, not `landuse/class=agriculture`.
+Forests, grass, parks, gardens and allotments also go through `landcover`.
+
+Run a small Cologne comparison before rebuilding Europe:
+
+```bash
+uv run tiles preview --before tilesets/nrw-v4.mbtiles \
+  --directory /tmp/cologne-union-preview --bbox 6.8,50.85,7.1,51.02 \
+  --landuse built-up
+```
+
+The default `built-up` preview compares the mask and original bright-fill classes
+at z6–11, including the z9→10 handover. `--landuse residential` only shows original
+residential polygons (z6–9); the combined candidate mask cannot be separated into
+residential polygons anymore and is therefore omitted in that diagnostic.
+The HTML enlarges selected polygons to the same extent; also review `after.mbtiles`
+in the actual map style. Cropped previews must not replace regional tilesets.
+
+After approving the preview, use the server's existing `.env` and run:
+
+```bash
+OUTPUT_DIR=tilesets/union-candidate uv run tiles plan
+OUTPUT_DIR=tilesets/union-candidate uv run tiles run
+```
+
+Use a new output directory: Lua/config fingerprints changed and existing outputs
+intentionally fail the stale-output check. Prepared inputs can be reused when
+their provenance matches. The final file is still named
+`tilesets/union-candidate/nrw-v4.mbtiles`; review before replacing the served file.
+The overview change applies throughout Europe. DACH/NRW at z13–14 retain original
+classes. No additional labels, finer simplification or overzoom fallback is added.

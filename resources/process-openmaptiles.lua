@@ -238,6 +238,12 @@ aerowayBuildings= Set { "terminal", "gate", "tower" }
 landuseKeys     = Set { "school", "university", "kindergarten", "college", "library", "hospital",
                         "railway", "cemetery", "military", "residential", "commercial", "industrial",
                         "retail", "stadium", "pitch", "playground", "theme_park", "bus_station", "zoo" }
+-- Bright built-up fill at overview zooms. Keep mixed/open grounds out:
+-- cemetery, military, stadium, pitch, playground, theme_park and zoo.
+-- Preserve the original class so map styles can still distinguish each use.
+builtUpLanduseKeys = Set { "residential", "commercial", "industrial", "retail",
+                          "railway", "bus_station", "school", "university",
+                          "college", "kindergarten", "library", "hospital" }
 landcoverKeys   = { wood="wood", forest="wood",
                     wetland="wetland",
                     beach="sand", sand="sand", dune="sand",
@@ -752,11 +758,7 @@ function way_function()
 		if l=="" then l=amenity end
 		if l=="" then l=tourism end
 		if landuseKeys[l] then
-			Layer("landuse", true)
-			Attribute("class", l)
-			if l=="residential" then
-				SetResidentialMinZoom()
-			else MinZoom(11) end
+			WriteLanduse(l)
 			write_name = true
 		end
 	end
@@ -871,15 +873,21 @@ function SetBrunnelAttributes()
 	end
 end
 
--- Set minimum zoom level by area
--- Show individual OSM residential patches from the regional overview.
--- Keep the smallest patches for z7/8 instead of packing subpixel polygons
--- into every low-zoom tile. Natural Earth supplies the z4/5 overview only.
-function SetResidentialMinZoom()
-	local area = Area()
-	if     area >= (ZRES8 / 2)^2 then MinZoom(6)
-	elseif area >= (ZRES9 / 2)^2 then MinZoom(7)
-	else                            MinZoom(8) end
+-- The overview alias writes into landuse only at z6-9. Every selected polygon
+-- enters at z6 so small parcels can join their neighbours BEFORE simplification.
+-- At z10+, emit original classes instead. These are separate input layers with
+-- disjoint zoom ranges: the mask never stacks over its constituent polygons.
+function WriteLanduse(class)
+	Layer("landuse", true)
+	Attribute("class", class)
+	if builtUpLanduseKeys[class] then
+		MinZoom(10)
+		Layer("landuse_built_up", true)
+		Attribute("class", "built_up")
+		MinZoom(6)
+	else
+		MinZoom(11)
+	end
 end
 
 function SetMinZoomByArea()

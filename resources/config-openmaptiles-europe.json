@@ -25,6 +25,7 @@
 		"aerodrome_label":   { "minzoom": 10, "maxzoom": 14 },
 		"park":              { "minzoom": 11, "maxzoom": 14 },
 		"landuse":           { "minzoom":  4, "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0003 },
+		"landuse_built_up":  { "minzoom": 6, "maxzoom": 9, "simplify_below": 13, "simplify_level": 0.0003, "combine_polygons_below": 10, "write_to": "landuse" },
 		"landcover":         { "minzoom":  0, "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0003 },
 		"mountain_peak":     { "minzoom": 11, "maxzoom": 14 }
 	},

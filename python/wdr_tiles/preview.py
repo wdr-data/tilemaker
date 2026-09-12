@@ -14,6 +14,23 @@ from pathlib import Path
 from typing import Literal, TypedDict
 
 Bounds = tuple[float, float, float, float]
+LanduseSelection = Literal["residential", "built-up"]
+BUILT_UP_CLASSES = frozenset(
+    {
+        "residential",
+        "commercial",
+        "industrial",
+        "retail",
+        "railway",
+        "bus_station",
+        "school",
+        "university",
+        "college",
+        "kindergarten",
+        "library",
+        "hospital",
+    }
+)
 Ring = list[list[float]]
 Polygon = list[Ring]
 
@@ -48,7 +65,13 @@ def tile_xy(lon: float, lat: float, z: int) -> tuple[float, float]:
     )
 
 
-def features(tileset: Path, bbox: Bounds, zoom: int, decoder: str) -> list[Feature]:
+def features(
+    tileset: Path,
+    bbox: Bounds,
+    zoom: int,
+    decoder: str,
+    classes: frozenset[str] = frozenset({"residential"}),
+) -> list[Feature]:
     west, south, east, north = bbox
     left, top = tile_xy(west, north, zoom)
     right, bottom = tile_xy(east, south, zoom)
@@ -77,7 +100,7 @@ def features(tileset: Path, bbox: Bounds, zoom: int, decoder: str) -> list[Featu
                 result.extend(
                     f
                     for f in layer["features"]
-                    if f["properties"].get("class") == "residential"
+                    if str(f["properties"].get("class")) in classes
                 )
 
     return result
@@ -114,26 +137,43 @@ def svg_panel(items: Sequence[Feature], bbox: Bounds) -> str:
     return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height:.2f}" style="background:#f1f3f4" overflow="hidden"><g fill="#b3b9be" fill-rule="evenodd">{"".join(paths)}</g></svg>'
 
 
-def render(before: Path, after: Path, output: Path, bbox: Bounds, decoder: str) -> None:
+def render(
+    before: Path,
+    after: Path,
+    output: Path,
+    bbox: Bounds,
+    decoder: str,
+    landuse: LanduseSelection = "built-up",
+) -> None:
+    classes = (
+        (BUILT_UP_CLASSES | {"built_up"})
+        if landuse == "built-up"
+        else frozenset({"residential"})
+    )
+    zooms = range(6, 12) if landuse == "built-up" else range(6, 10)
     sections = []
-    for z in [6, 7, 8, 9]:
+    for z in zooms:
         panels = [
-            svg_panel(features(path, bbox, z, decoder), bbox)
+            svg_panel(features(path, bbox, z, decoder, classes), bbox)
             for path in [before, after]
         ]
         sections.append(
-            f'<section data-zoom="{z}"><div><h2>Current v4</h2>{panels[0]}</div><div><h2>Proposed</h2>{panels[1]}</div></section>'
+            f'<section data-zoom="{z}"><div><h2>Existing tileset</h2>{panels[0]}</div><div><h2>Candidate</h2>{panels[1]}</div></section>'
         )
     html = (
-        """<!doctype html><meta charset="utf-8"><title>Ruhr residential geometry comparison</title>
+        """<!doctype html><meta charset="utf-8"><title>Land-use geometry comparison</title>
 <style>body{font:16px system-ui;margin:32px;background:#fff;color:#303438}h1{font-size:24px}h2{font-size:17px}p{max-width:1000px;line-height:1.5}section{display:none;gap:24px}section.active{display:flex}section>div{width:50%;min-width:0}svg{width:100%;border:1px solid #ddd}select{font:inherit;padding:6px}footer{margin-top:24px;color:#60666a;font-size:14px}</style>
-<h1>Ruhr residential geometry comparison</h1>
-<p>Residential polygons only, with identical colors and geographic extent. The selected source zoom is enlarged to make boundaries visible; this is not native map scale. Labels and other map layers are omitted from this diagnostic view.</p>
-<label>Source zoom <select id="zoom"><option>6</option><option>7</option><option>8</option><option>9</option></select></label>
+<h1>Land-use geometry comparison</h1>
+<p>Selected land-use polygons only, with identical colors and geographic extent. The selected source zoom is enlarged to make boundaries visible; this is not native map scale. Labels and other map layers are omitted from this diagnostic view.</p>
+<label>Source zoom <select id="zoom">ZOOM_OPTIONS</select></label>
 """
         + "".join(sections)
-        + """<footer>Before: existing merged v4 tiles. After: a local Ruhr extract using the proposed config and production Lua. The regional extract can contain a different OSM snapshot; review a full candidate tileset before publication.</footer>
+        + """<footer>Before: supplied tileset. After: local extract using the candidate config and production Lua. The regional extract can contain a different OSM snapshot; review a full candidate tileset before publication.</footer>
 <script>const select=document.querySelector('#zoom');function show(){document.querySelectorAll('section').forEach(s=>s.classList.toggle('active',s.dataset.zoom===select.value))}select.onchange=show;show()</script>"""
+    )
+    html = html.replace("ZOOM_OPTIONS", "".join(f"<option>{z}</option>" for z in zooms))
+    html = html.replace(
+        "Selected land-use polygons only", f"Classes: {', '.join(sorted(classes))}"
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(html)

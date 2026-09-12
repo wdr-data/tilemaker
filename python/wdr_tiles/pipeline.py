@@ -220,7 +220,13 @@ class Pipeline:
             publish(output, destination, record)
         log.info("candidate.ready", path=str(destination))
 
-    def preview(self, before: Path, directory: Path, bbox: str) -> None:
+    def preview(
+        self,
+        before: Path,
+        directory: Path,
+        bbox: str,
+        landuse: preview.LanduseSelection = "built-up",
+    ) -> None:
         settings = self.settings
         coordinates = tuple(map(float, bbox.split(",")))
         if len(coordinates) != 4:
@@ -261,7 +267,9 @@ class Pipeline:
             [settings.osmium, "renumber", extract, "--output", renumbered],
         )
         config: TileConfig = json.loads(settings.config("europe").read_text())
-        config["settings"].update(minzoom=6, maxzoom=9, basezoom=12)
+        config["settings"].update(
+            minzoom=6, maxzoom=11 if landuse == "built-up" else 9, basezoom=12
+        )
         config_path = directory / "config.json"
         config_path.write_text(json.dumps(config, indent=2))
         after = directory / "after.mbtiles"
@@ -291,4 +299,5 @@ class Pipeline:
             directory / "comparison.html",
             coordinates,
             settings.tile_decode,
+            landuse,
         )

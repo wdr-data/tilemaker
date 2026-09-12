@@ -13,6 +13,7 @@ import click
 from . import inputs
 from .logging import log_session
 from .pipeline import Pipeline
+from .preview import LanduseSelection
 from .settings import PROFILES, Settings
 from .state import pipeline_lock
 
@@ -158,7 +159,20 @@ def merge(pipeline: Pipeline) -> None:
     help="New directory for preview artifacts.",
 )
 @click.option("--bbox", default="6.6,51.2,7.8,51.8", show_default=True)
+@click.option(
+    "--landuse",
+    type=click.Choice(["residential", "built-up"]),
+    default="built-up",
+    show_default=True,
+    help="Built-up compares the union and original classes at z6–11. Residential only omits the combined overview mask.",
+)
 @locked
-def preview(pipeline: Pipeline, before: Path, directory: Path, bbox: str) -> None:
-    """Build a small Ruhr sample and an HTML geometry comparison (z6–9)."""
-    pipeline.preview(before.resolve(), directory.resolve(), bbox)
+def preview(
+    pipeline: Pipeline,
+    before: Path,
+    directory: Path,
+    bbox: str,
+    landuse: LanduseSelection,
+) -> None:
+    """Build a small extract and an HTML land-use geometry comparison."""
+    pipeline.preview(before.resolve(), directory.resolve(), bbox, landuse)
