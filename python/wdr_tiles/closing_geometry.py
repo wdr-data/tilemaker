@@ -8,6 +8,7 @@ internal cell edges. A shared projection avoids discontinuities at UTM zones.
 import math
 import sqlite3
 from collections.abc import Iterator, Mapping
+from contextlib import closing
 from functools import lru_cache
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from shapely.geometry import Polygon, box
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform
 
+from .logging import log
 from .preview import BUILT_UP_CLASSES
 
 RADII = {6: 100, 7: 75, 8: 50, 9: 25}
@@ -139,6 +141,28 @@ def close(geometry: BaseGeometry, radius: float) -> BaseGeometry:
     )
 
 
+def valid_geometry(
+    value: BaseGeometry, bounds: Bounds, stage: str, zoom: int | None = None
+) -> BaseGeometry:
+    """Coordinate transforms can invalidate even previously valid polygons."""
+    if value.is_valid:
+        return value
+    reason = shapely.is_valid_reason(value)
+    repaired = shapely.make_valid(value)
+    if not repaired.is_valid:
+        raise ValueError(
+            f"Could not repair {stage} geometry at {bounds}, z{zoom}: {reason}"
+        )
+    log.warning(
+        "built_up.geometry_repaired",
+        bounds=bounds,
+        stage=stage,
+        zoom=zoom,
+        reason=reason,
+    )
+    return repaired
+
+
 def cell_masks(geometries: list[BaseGeometry], bounds: Bounds) -> dict[int, bytes]:
     project, unproject = transformers()
     halo = box(*padded_bounds(bounds))
@@ -147,18 +171,22 @@ def cell_masks(geometries: list[BaseGeometry], bounds: Bounds) -> dict[int, byte
         if geometry.intersects(halo):
             # Project the full source geometry before clipping to avoid different
             # projections of a long source segment on opposite sides of a cell.
-            projected.append(transform(project.transform, geometry))
+            projected.append(
+                valid_geometry(
+                    transform(project.transform, geometry), bounds, "projected"
+                )
+            )
     if not projected:
         return {}
-    base = shapely.union_all(projected)
+    base = valid_geometry(shapely.union_all(projected), bounds, "union")
     core = box(*bounds)
     result = {}
     for zoom, radius in RADII.items():
-        closed = close(base, radius)
-        if not closed.is_valid:
-            raise ValueError(f"Invalid closing geometry at {bounds}, z{zoom}")
-        geographic = transform(unproject.transform, closed)
-        clipped = geographic.intersection(core)
+        closed = valid_geometry(close(base, radius), bounds, "closed", zoom)
+        geographic = valid_geometry(
+            transform(unproject.transform, closed), bounds, "geographic", zoom
+        )
+        clipped = valid_geometry(geographic.intersection(core), bounds, "clipped", zoom)
         parts = list(polygons(clipped))
         if parts:
             result[zoom] = shapely.to_wkb(shapely.MultiPolygon(parts))
@@ -168,7 +196,7 @@ def cell_masks(geometries: list[BaseGeometry], bounds: Bounds) -> dict[int, byte
 def process_cell(database: Path, cell: Cell) -> dict[int, bytes]:
     bounds = cell_bounds(cell)
     west, south, east, north = padded_bounds(bounds)
-    with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as db:
         rows = db.execute(
             """SELECT p.geometry FROM bounds b JOIN polygons p ON p.id=b.id
             WHERE b.minx<=? AND b.maxx>=? AND b.miny<=? AND b.maxy>=?""",

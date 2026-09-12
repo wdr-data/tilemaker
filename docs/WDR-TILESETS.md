@@ -348,6 +348,12 @@ The cloud example explicitly uses 16 workers. `built_up.indexing` (including inp
 `built_up.running` and `built_up.progress` events report progress at roughly
 60-second intervals; completion records elapsed time and cell/file counts.
 Native filtering and export have their own stage logs.
+Polygons are checked for validity after projection, closing and inverse
+projection, and repaired with GEOS `make_valid` when needed; repairs log their
+stage, zoom and bounds. Valid source geometry can still become invalid after
+coordinate transformations. Failed cells are logged immediately as
+`built_up.cell_failed`; queued jobs are cancelled, and `built_up.stopping`
+reports any workers still draining before the pipeline exits.
 
 Completed masks are published together with a manifest and reused when their
 source, code and dependency records match. A failed preparation restarts the

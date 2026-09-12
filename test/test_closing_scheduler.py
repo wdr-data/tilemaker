@@ -85,3 +85,38 @@ class ClosingSchedulerTest(unittest.TestCase):
                 closing.write_masks(root / "unused.sqlite", [], root, 2), []
             )
             self.assertEqual(list(root.iterdir()), [])
+
+    def test_failure_is_logged_before_waiting_for_other_workers(self) -> None:
+        other_started, failure_logged, observed = Event(), Event(), Event()
+
+        def process(database: Path, cell: Cell) -> dict[int, bytes]:
+            if cell[0] == 0:
+                if not other_started.wait(timeout=5):
+                    raise RuntimeError("Second worker did not start")
+                raise RuntimeError("geometry failed")
+            other_started.set()
+            if failure_logged.wait(timeout=5):
+                observed.set()
+            return {}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                patch.object(closing, "ProcessPoolExecutor", ThreadPoolExecutor),
+                patch.object(closing.geometry, "process_cell", side_effect=process),
+                patch.object(
+                    closing.log,
+                    "error",
+                    side_effect=lambda *args, **kwargs: failure_logged.set(),
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    ValueError, r"Closing failed in cell \(0, 0\)"
+                ):
+                    closing.write_masks(
+                        root / "unused.sqlite", [(0, 0), (1, 0)], root, 2
+                    )
+            self.assertTrue(
+                observed.is_set(), "Failure was hidden behind worker shutdown"
+            )
+            self.assertEqual(list(root.iterdir()), [])

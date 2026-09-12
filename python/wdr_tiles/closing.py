@@ -145,6 +145,29 @@ def write_masks(
                     try:
                         masks = future.result()
                     except Exception as error:
+                        # Report before executor shutdown: waiting silently for
+                        # other cells made geometry failures look like a stall.
+                        log.error(
+                            "built_up.cell_failed",
+                            cell=cell,
+                            error=str(error),
+                            completed=completed,
+                            written=written,
+                        )
+                        for other in pending:
+                            other.cancel()
+                        active = {other for other in pending if not other.done()}
+                        shutdown_started = time.monotonic()
+                        while active:
+                            log.info(
+                                "built_up.stopping",
+                                active=len(active),
+                                failed_cell=cell,
+                                elapsed_seconds=round(
+                                    time.monotonic() - shutdown_started, 1
+                                ),
+                            )
+                            _, active = wait(active, timeout=30)
                         raise ValueError(f"Closing failed in cell {cell}") from error
                     with (spool / str(index)).open("wb") as output:
                         pickle.dump(masks, output, protocol=pickle.HIGHEST_PROTOCOL)
