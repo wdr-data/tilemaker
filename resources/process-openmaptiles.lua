@@ -804,6 +804,9 @@ function way_function()
 	else
 		if l=="" then l=amenity end
 		if l=="" then l=tourism end
+		-- Churchyard burial grounds use amenity=grave_yard in OSM.
+		-- Share the cemetery polygon class as well as the existing POI class.
+		if l=="grave_yard" then l="cemetery" end
 		if landuseKeys[l] then
 			WriteLanduse(l)
 			write_name = true

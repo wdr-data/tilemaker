@@ -527,3 +527,8 @@ Across those four small z10–14 extracts, total compressed tile payload grew fr
 5,098,720 to 5,159,340 bytes (1.19%) for all additions and flags together, using
 the same native binary and config before and after. This is a local detail-only
 comparison, not a projection for Europe or for z6–9 closing work.
+
+`amenity=grave_yard` areas (for example Domfriedhof beside Cologne Cathedral)
+are normalized to `landuse/class=cemetery`, with the same z11 minimum as
+`landuse=cemetery`. Their existing cemetery POI output is preserved. Both
+burial-ground forms stay outside the built-up overview selection.
