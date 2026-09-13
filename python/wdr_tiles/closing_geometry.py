@@ -27,6 +27,7 @@ HALO_METRES = 2000
 WATERWAYS = {"river", "riverbank", "stream", "canal", "drain", "ditch", "dock"}
 PAVED_SURFACES = frozenset(
     {
+        "bricks",
         "paved",
         "asphalt",
         "paving_stones",
@@ -38,6 +39,31 @@ PAVED_SURFACES = frozenset(
         "wood",
         "sett",
         "unhewn_cobblestone",
+    }
+)
+# Mapped road surfaces we can safely consider when explicitly paved.
+# Deliberately excludes traffic islands and unspecified path areas.
+PAVED_HIGHWAYS = frozenset(
+    {
+        "pedestrian",
+        "footway",
+        "cycleway",
+        "steps",
+        "service",
+        "living_street",
+        "residential",
+        "unclassified",
+        "road",
+        "tertiary",
+        "secondary",
+        "primary",
+        "trunk",
+        "motorway",
+        "tertiary_link",
+        "secondary_link",
+        "primary_link",
+        "trunk_link",
+        "motorway_link",
     }
 )
 Cell = tuple[int, int]
@@ -65,24 +91,40 @@ def selected_class(tags: Mapping[str, str]) -> str | None:
     )
     if value in BUILT_UP_CLASSES:
         return value
-    # A green/mixed land-use tag takes precedence over the pedestrian surface.
-    if value:
+    # Physical land cover takes precedence. A parking/marketplace amenity is
+    # allowed through only so its explicit surface can be checked below.
+    if value and value not in {"parking", "marketplace"}:
         return None
-    pedestrian_area = tags.get("area:highway") == "pedestrian" or (
-        tags.get("highway") == "pedestrian" and tags.get("area") == "yes"
-    )
     try:
         layer = float(tags.get("layer", "0"))
     except ValueError:
         layer = 0
     if (
-        pedestrian_area
-        and tags.get("surface") in PAVED_SURFACES
-        and tags.get("tunnel", "") in {"", "no"}
-        and tags.get("covered", "") in {"", "no"}
-        and layer >= 0
+        tags.get("surface") not in PAVED_SURFACES
+        or tags.get("tunnel", "") not in {"", "no"}
+        or tags.get("covered", "") not in {"", "no"}
+        or tags.get("indoor", "") not in {"", "no"}
+        or layer < 0
+        or tags.get("area") == "no"
     ):
-        return "pedestrian"
+        return None
+    # Only called for exported polygon geometry. Osmium drops type=multipolygon
+    # from tags; --attributes=type retains the assembled relation's provenance.
+    explicit_area = (
+        tags.get("area") == "yes"
+        or tags.get("type") == "multipolygon"
+        or tags.get("@type") == "relation"
+    )
+    area_highway = tags.get("area:highway", "")
+    highway = tags.get("highway", "")
+    if area_highway in PAVED_HIGHWAYS:
+        return area_highway
+    if highway in PAVED_HIGHWAYS and explicit_area:
+        return highway
+    if tags.get("amenity") == "parking":
+        return "parking" if tags.get("parking", "surface") == "surface" else None
+    if tags.get("place") == "square" or tags.get("amenity") == "marketplace":
+        return "square"
     return None
 
 

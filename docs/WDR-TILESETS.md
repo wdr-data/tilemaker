@@ -401,14 +401,51 @@ spatial index are deleted on success. Allow scratch space for these intermediate
 in `OUTPUT_DIR`, as well as the persistent GeoJSONL files. The local preview
 checks correctness; it does not establish full-Europe runtime or peak storage.
 
-Paved pedestrian polygons are also included in the z6–9 mask, accepting both
-`highway=pedestrian` + `area=yes` and `area:highway=pedestrian`. Only explicitly
-hard-surfaced areas qualify; covered and underground areas are excluded.
-At z10+ these surfaces are emitted as `transportation/class=path`,
-`subclass=pedestrian` polygons, without an area-based delay at the handover.
-The detailed style needs a transportation polygon fill (the existing broad
-`road_area` fill works). Unpaved/unspecified surfaces retain their detailed
-transportation behavior at z14. No pedestrian labels are added.
+Explicitly paved ground also contributes to the z6–9 mask:
+
+- `highway=pedestrian` and other supported highway areas, with `area=yes` on
+  ordinary ways. Multipolygon relations imply an area without that tag.
+- `area:highway=pedestrian`, `footway`, `cycleway`, `steps`, `service`,
+  `living_street`, and the normal road classes and their links.
+- `place=square` and `amenity=marketplace` polygons with an explicit paved surface.
+- `amenity=parking` polygons with an explicit paved surface and `parking=surface`
+  (or no parking subtype). Underground and multi-storey parking do not qualify.
+
+Covered, indoor and underground paved areas are excluded. Water and other
+physical land-cover tags take precedence; a grass-tagged square stays green.
+An unspecified surface is not assumed paved. `bricks`, `sett`, and the other
+hard surfaces in `PAVED_SURFACES` qualify; grass pavers and compacted/gravel
+surfaces do not. Traffic islands, religious grounds, brownfields and construction
+sites are not added wholesale. `landuse=garages` joins the built-up land uses.
+
+At z10+, highway polygons retain their `transportation` classes/subclasses;
+new square and parking polygons use `landuse/class=square` and `class=parking`.
+Selected detailed polygons carry **`built_up=true`**, as do the overview mask
+and Natural Earth residential fill. Styles can select this boolean on landuse
+and transportation polygons without maintaining their own category lists.
+The existing broad `road_area` transportation fill still works. Existing
+landuse class lists may remain as compatibility for older tilesets.
+
+This is a classification flag, not a second geometry layer. Detailed geometry
+is not copied into an additional built-up layer, and morphological closing still
+ends at z9. Original classes remain available for other styles. Newly supported
+polygons add geometry; the flag itself adds only attributes. Full-region size
+and processing impact depends on the source data and is not inferred from the
+small local regression extracts. Unpaved/unspecified pedestrian surfaces retain
+their previous detailed transportation treatment. No extra labels are added.
+
+Osmium export uses `--attributes=type` to retain relation provenance: the exporter
+normally removes `type=multipolygon`. Merely treating every exported Polygon as
+an explicit highway area would also accept ordinary closed linear loops. The
+filter selects highway relations and `area=yes` ways, plus the other supported
+area tags, to avoid exporting Europe's entire road network. Python and Lua
+selection are checked against the same positive and negative regression cases.
+
+Documentation: [multipolygons](https://wiki.openstreetmap.org/wiki/Relation:multipolygon),
+[highway areas](https://wiki.openstreetmap.org/wiki/Key:area:highway),
+[squares](https://wiki.openstreetmap.org/wiki/Square),
+[parking](https://wiki.openstreetmap.org/wiki/Tag:amenity=parking),
+[garages](https://wiki.openstreetmap.org/wiki/Tag:landuse=garages).
 
 `landuse=quarry` is emitted separately as `landuse/class=quarry`, using the
 existing area thresholds: large sites can appear at z6/7, smaller ones later.
@@ -420,16 +457,17 @@ Complete normal OSM landuse class selection:
 | Original classes | Overview z6–9 | Detail |
 | --- | --- | --- |
 | `residential`, `commercial`, `industrial`, `retail` | Combined `built_up` | Original classes from z10 |
-| `railway`, `bus_station` | Combined `built_up` | Original classes from z10; land areas, not railway lines |
+| `railway`, `bus_station`, `garages` | Combined `built_up` | Original classes from z10; land areas, not railway lines |
 | `school`, `university`, `college`, `kindergarten`, `library`, `hospital` | Combined `built_up` | Original classes from z10; draw separate campus greenery above the fill |
 | `quarry` | Separate `quarry`, according to area | Same class and area thresholds; no closing |
 | `cemetery`, `pitch`, `playground` | Excluded | Original classes from z11; keep green or style separately |
 | `military`, `stadium`, `theme_park`, `zoo` | Excluded | Original classes from z11; mixed grounds often contain open space |
 
-Styles must include `built_up` alongside the twelve original bright-fill classes
-in their `landuse` filter. Filling every landuse class also paints the seven
+For newly built tiles, use `["==", "built_up", true]` on polygon fills in
+`landuse` and `transportation`. Filling every landuse class also paints the seven
 excluded open/mixed uses as urban land. Natural Earth still supplies generalized
-`residential` shapes at z4–5; there is no urban fill below z4.
+`residential` shapes at z4–5; there is no urban fill below z4. The original
+landuse classes remain unchanged; `square` and `parking` are additional classes.
 
 Special `waterway=boatyard` and `waterway=fuel` mappings retain their `industrial`
 class at z12 and z14 respectively. This list describes this Lua mapping, not all
@@ -446,7 +484,7 @@ uv run tiles preview --before tilesets/nrw-v4.mbtiles \
 ```
 
 The default `built-up` preview compares the mask, original bright-fill classes
-and pedestrian transportation polygons at z6–11, including the z9→10 handover. `--landuse residential` only shows original
+and flagged built-up transportation polygons (plus legacy pedestrian areas) at z6–11, including the z9→10 handover. `--landuse residential` only shows original
 residential polygons (z6–9); the combined candidate mask cannot be separated into
 residential polygons anymore and is therefore omitted in that diagnostic.
 The HTML enlarges selected polygons to the same extent; also review `after.mbtiles`
@@ -468,3 +506,24 @@ their provenance matches. The final file is still named
 The overview change applies throughout Europe. DACH/NRW at z13–14 retain original
 classes. The app's existing `built_up` filter remains compatible; label settings
 are unchanged.
+
+### Built-on area regression checks (September 2026)
+
+The September 10 DACH snapshot was used for small native Tilemaker builds of
+Dortmund, Bonn, Cologne and Düsseldorf. At z14, the revised output covers the
+sampled interior points of Hansaplatz, Münsterplatz, Burgplatz, Neumarkt and
+Stiftsplatz, which were missing in the previous merged tiles. The first three
+are pedestrian multipolygons without `area=yes`; Neumarkt has a paved square
+polygon, and Stiftsplatz is paved surface parking. Alter Markt in Dortmund
+remains covered. Düsseldorf's Caritas-Platz retains its grass polygon and does
+not acquire a built-up fill. Gülichplatz already had retail fill underneath.
+
+The full filter/export/closing preparation was also run on the Dortmund and
+Bonn extracts. Its z6–9 masks cover the sampled Hansaplatz, Münsterplatz and
+Stiftsplatz points. Selection does not guarantee that every tiny isolated
+polygon survives subsequent tile simplification at the z10 handover.
+
+Across those four small z10–14 extracts, total compressed tile payload grew from
+5,098,720 to 5,159,340 bytes (1.19%) for all additions and flags together, using
+the same native binary and config before and after. This is a local detail-only
+comparison, not a projection for Europe or for z6–9 closing work.

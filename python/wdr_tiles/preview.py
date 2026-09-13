@@ -29,6 +29,7 @@ BUILT_UP_CLASSES = frozenset(
         "kindergarten",
         "library",
         "hospital",
+        "garages",
     }
 )
 Ring = list[list[float]]
@@ -103,15 +104,20 @@ def features(
                     if feature["geometry"]["type"] not in ("Polygon", "MultiPolygon"):
                         continue
                     properties = feature["properties"]
-                    landuse_match = (
-                        layer_name == "landuse"
-                        and str(properties.get("class")) in classes
+                    landuse_match = layer_name == "landuse" and (
+                        str(properties.get("class")) in classes
+                        or (include_pedestrian and properties.get("built_up") is True)
                     )
                     pedestrian_match = (
                         include_pedestrian
                         and layer_name == "transportation"
-                        and properties.get("class") == "path"
-                        and properties.get("subclass") == "pedestrian"
+                        and (
+                            properties.get("built_up") is True
+                            or (
+                                properties.get("class") == "path"
+                                and properties.get("subclass") == "pedestrian"
+                            )
+                        )
                     )
                     if landuse_match or pedestrian_match:
                         result.append(feature)

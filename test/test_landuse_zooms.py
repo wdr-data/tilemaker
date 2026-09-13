@@ -50,6 +50,10 @@ class LanduseZoomTest(unittest.TestCase):
     def test_built_up_output_preserves_detail_and_admits_small_parcels(self) -> None:
         script = r"""
         dofile("resources/process-openmaptiles.lua")
+        local mask = attribute_function({class="built_up", built_up="true"}, "landuse_built_up_0")
+        assert(mask.built_up == true)
+        local urban = attribute_function({featurecla="Urban area"}, "urban_areas")
+        assert(urban.built_up == true)
         local outputs, current
         function Layer(name, polygon)
             assert(polygon)
@@ -57,6 +61,7 @@ class LanduseZoomTest(unittest.TestCase):
             table.insert(outputs, current)
         end
         function Attribute(key, value) current[key] = value end
+        AttributeBoolean = Attribute
         function MinZoom(value) current.zoom = value end
         -- Area must not be consulted: small parcels need to reach the union.
         function Area() error("Pre-union area filtering would drop small parcels") end

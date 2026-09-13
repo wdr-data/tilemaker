@@ -95,7 +95,7 @@ class MaskWriters:
                     self.sources.append({"zoom": zoom, "filename": filename})
                 coordinates = shapely.to_geojson(shapely.orient_polygons(polygon))
                 writer.write(
-                    '{"type":"Feature","properties":{"class":"built_up"},"geometry":'
+                    '{"type":"Feature","properties":{"class":"built_up","built_up":true},"geometry":'
                     + coordinates
                     + "}\n"
                 )
@@ -228,7 +228,19 @@ def prepare(settings: Settings, source: Path, directory: Path) -> Manifest:
             f"wr/{key}={classes}"
             for key in ("landuse", "natural", "leisure", "amenity", "tourism")
         ]
-        expressions.extend(["wr/highway=pedestrian", "wr/area:highway=pedestrian"])
+        highways = ",".join(sorted(geometry.PAVED_HIGHWAYS))
+        # Closed highway ways need area=yes; assembled relations imply an area.
+        # Filter these forms separately to avoid exporting Europe's road network.
+        # tags-filter uses OR; selection applies the exact surface rules later.
+        expressions.extend(
+            [
+                f"wr/area:highway={highways}",
+                f"r/highway={highways}",
+                "w/area=yes",
+                "wr/place=square",
+                "wr/amenity=parking,marketplace",
+            ]
+        )
         run_command(
             settings,
             "built-up-filter",
@@ -249,6 +261,7 @@ def prepare(settings: Settings, source: Path, directory: Path) -> Manifest:
                 "export",
                 filtered,
                 "--geometry-types=polygon",
+                "--attributes=type",
                 "--output-format=geojsonseq",
                 "-x",
                 "print_record_separator=false",
@@ -308,7 +321,7 @@ def add_layers(
             "simplify_ratio": template.get("simplify_ratio", 2),
             "combine_polygons_below": 10,
             "source": str(directory / source["filename"]),
-            "source_columns": ["class"],
+            "source_columns": ["class", "built_up"],
             "write_to": "landuse",
         }
     if len(layers) > 256:

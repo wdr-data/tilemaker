@@ -49,7 +49,7 @@ INVALID_ZOOM = 99
 
 -- Process node/way tags
 aerodromeValues = Set { "international", "public", "regional", "military", "private" }
-pavedValues = Set { "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
+pavedValues = Set { "bricks", "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
 unpavedValues = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "salt", "sand", "snow", "woodchips" }
 
 -- Process node tags
@@ -230,20 +230,20 @@ z13RoadValues     = Set { "track", "service" }
 manMadeRoadValues = Set { "pier", "bridge" }
 pathValues      = Set { "footway", "cycleway", "bridleway", "path", "steps", "pedestrian", "platform" }
 linkValues      = Set { "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link" }
-pavedValues     = Set { "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
+pavedValues     = Set { "bricks", "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
 unpavedValues   = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "salt", "sand", "snow", "woodchips" }
 railwayClasses  = { rail="rail", narrow_gauge="rail", preserved="rail", funicular="rail", subway="transit", light_rail="transit", monorail="transit", tram="transit" }
 
 aerowayBuildings= Set { "terminal", "gate", "tower" }
 landuseKeys     = Set { "school", "university", "kindergarten", "college", "library", "hospital",
                         "railway", "cemetery", "military", "residential", "commercial", "industrial",
-                        "retail", "stadium", "pitch", "playground", "theme_park", "bus_station", "zoo", "quarry" }
+                        "retail", "stadium", "pitch", "playground", "theme_park", "bus_station", "zoo", "quarry", "garages" }
 -- Bright built-up fill at overview zooms. Keep mixed/open grounds out:
 -- cemetery, military, stadium, pitch, playground, theme_park and zoo.
 -- Preserve the original class so map styles can still distinguish each use.
 builtUpLanduseKeys = Set { "residential", "commercial", "industrial", "retail",
                           "railway", "bus_station", "school", "university",
-                          "college", "kindergarten", "library", "hospital" }
+                          "college", "kindergarten", "library", "hospital", "garages" }
 landcoverKeys   = { wood="wood", forest="wood",
                     wetland="wetland",
                     beach="sand", sand="sand", dune="sand",
@@ -315,13 +315,40 @@ function relation_scan_function()
 	end
 end
 
--- Explicit hard surfaces only; buried/covered pedestrian areas must not
--- become bright land in the overview. Match closing_geometry.py's selection.
-function IsBuiltUpPedestrianArea()
-	return pavedValues[Find("surface")]
-		and (Find("tunnel")=="" or Find("tunnel")=="no")
-		and (Find("covered")=="" or Find("covered")=="no")
-		and (tonumber(Find("layer")) or 0)>=0
+-- Same selection as closing_geometry.selected_class; regression cases exercise
+-- both implementations. Keep the original classes and add built_up=true so
+-- clients do not need to duplicate this classification policy.
+pavedHighwayValues = Set { "pedestrian", "footway", "cycleway", "steps", "service",
+    "living_street", "residential", "unclassified", "road", "tertiary", "secondary",
+    "primary", "trunk", "motorway", "tertiary_link", "secondary_link",
+    "primary_link", "trunk_link", "motorway_link" }
+
+function BuiltUpClass()
+    if not IsClosed() or Find("disused")=="yes" or Find("highway")=="proposed" then return nil end
+    if Find("natural")=="water" or Find("leisure")=="swimming_pool"
+        or Find("landuse")=="reservoir" or Find("landuse")=="basin"
+        or waterClasses[Find("waterway")] then return nil end
+    local value = ""
+    for _, key in ipairs({"landuse", "natural", "leisure", "amenity", "tourism"}) do
+        if Find(key)~="" then value=Find(key); break end
+    end
+    if builtUpLanduseKeys[value] then return value end
+    if value~="" and value~="parking" and value~="marketplace" then return nil end
+    if not pavedValues[Find("surface")]
+        or (Find("tunnel")~="" and Find("tunnel")~="no")
+        or (Find("covered")~="" and Find("covered")~="no")
+        or (Find("indoor")~="" and Find("indoor")~="no")
+        or (tonumber(Find("layer")) or 0)<0 or Find("area")=="no" then return nil end
+    local area_highway = Find("area:highway")
+    if pavedHighwayValues[area_highway] then return area_highway end
+    local highway = Find("highway")
+    if pavedHighwayValues[highway] and (Find("area")=="yes" or IsMultiPolygon()) then return highway end
+    if Find("amenity")=="parking" then
+        if Find("parking")=="" or Find("parking")=="surface" then return "parking" end
+        return nil
+    end
+    if Find("place")=="square" or Find("amenity")=="marketplace" then return "square" end
+    return nil
 end
 
 function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, service, is_rail, is_road, is_area)
@@ -336,7 +363,8 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	SetBrunnelAttributes()
 	-- We do not write any other attributes for areas.
 	if is_area then
-		if highway_class=="path" and subclass=="pedestrian" and IsBuiltUpPedestrianArea() then
+		if BuiltUpClass() then
+			AttributeBoolean("built_up", true)
 			-- Take over from the closed overview at z10 without an area-based gap.
 			MinZoom(10)
 		else
@@ -529,13 +557,13 @@ function way_function()
 
 	-- Roads ('transportation' and 'transportation_name')
 	-- A separately mapped pedestrian surface may have no highway tag at all.
-	if highway=="" and area_highway=="pedestrian" and is_closed then
-		highway="pedestrian"
+	if highway=="" and pavedHighwayValues[area_highway] and is_closed then
+		highway=area_highway
 	end
 	if highway ~= "" or public_transport == "platform" then
 		local access = Find("access")
 		local surface = Find("surface")
-		local is_area = (public_transport == "platform" or Find("area")=="yes" or area_highway=="pedestrian") and is_closed
+		local is_area = is_closed and Find("area")~="no" and (public_transport=="platform" or Find("area")=="yes" or IsMultiPolygon() or pavedHighwayValues[area_highway])
 
 		local h = highway
 		local is_road = true
@@ -589,7 +617,7 @@ function way_function()
 		end
 
 		-- Drop all areas except infrastructure for pedestrians handled above
-		if is_area and h ~= "path" then
+		if is_area and h ~= "path" and not BuiltUpClass() then
 			minzoom = INVALID_ZOOM
 		end
 
@@ -782,6 +810,14 @@ function way_function()
 		end
 	end
 
+    local built_class = BuiltUpClass()
+    if (built_class=="square" or built_class=="parking") and not landuseKeys[l] then
+        Layer("landuse", true)
+        Attribute("class", built_class)
+        AttributeBoolean("built_up", true)
+        MinZoom(10)
+    end
+
 	-- Parks
 	-- **** name?
 	if     boundary=="national_park" then Layer("park",true); Attribute("class",boundary); SetNameAttributes()
@@ -802,12 +838,16 @@ end
 
 -- Remap coastlines
 function attribute_function(attr,layer)
+	-- GeoJSON properties arrive at this hook as strings, including booleans.
+	if attr["class"]=="built_up" then
+		return { class="built_up", built_up=true }
+	end
 	if attr["featurecla"]=="Glaciated areas" then
 		return { subclass="glacier" }
 	elseif attr["featurecla"]=="Antarctic Ice Shelf" then
 		return { subclass="ice_shelf" }
 	elseif attr["featurecla"]=="Urban area" then
-		return { class="residential" }
+		return { class="residential", built_up=true }
 	elseif layer=="ocean" then
 		return { class="ocean" }
 	else
@@ -902,6 +942,7 @@ function WriteLanduse(class)
 		-- Keep extraction sites separate from settlements and preserve their outline.
 		SetMinZoomByArea()
 	elseif builtUpLanduseKeys[class] then
+		AttributeBoolean("built_up", true)
 		MinZoom(10)
 	else
 		MinZoom(11)
