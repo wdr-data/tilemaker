@@ -836,6 +836,7 @@ function way_function()
 		SetNameAttributes()
 		if write_name then rank=6 else rank=25 end
 		AttributeInteger("rank", rank)
+		if l=="quarry" then Attribute("class", "quarry") end
 	end
 end
 
