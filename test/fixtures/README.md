@@ -14,3 +14,8 @@ so tests can verify the repair leaves unrelated encoded data intact.
 The Python regression checks the decoded geometry, integer-grid round trip,
 idempotence and preservation of other layers/attributes. It does not use a
 machine-dependent timing threshold or require Node on the build server.
+
+`regions-invalid-z3.pbf.gz` is tile 3/4/2 (XYZ)
+from the regions overlay generated from Geofabrik DACH 2026-09-10, before final
+integer geometry repair. OSM data © OpenStreetMap contributors, ODbL 1.0.
+It exercises quantization defects while preserving region identifiers and outlines.

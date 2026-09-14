@@ -162,6 +162,9 @@ class ConfigurationTest(unittest.TestCase):
                 pipeline, "download", side_effect=lambda: events.append("download")
             ),
             patch.object(
+                pipeline, "build_regions", side_effect=lambda: events.append("regions")
+            ),
+            patch.object(
                 pipeline, "extract_nrw", side_effect=lambda: events.append("extract")
             ),
             patch.object(pipeline, "build", side_effect=events.append),
@@ -173,6 +176,7 @@ class ConfigurationTest(unittest.TestCase):
             [
                 "setup",
                 "download",
+                "regions",
                 "extract",
                 "coastline",
                 "europe",

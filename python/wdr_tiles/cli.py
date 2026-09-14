@@ -88,7 +88,7 @@ def plan(pipeline: Pipeline) -> None:
     )
     click.echo(f"Europe: {s.europe}\nDACH: {s.dach}\nNRW extract: {s.nrw}")
     click.echo(
-        "Order: setup → download → extract-nrw → coastline → built-up masks → europe → dach → nrw → merge"
+        "Order: setup → download → regions → extract-nrw → coastline → built-up masks → europe → dach → nrw → merge"
     )
     click.echo("Matching completed steps are reused. No overzoom tiles are generated.")
 
@@ -139,6 +139,13 @@ def extract_nrw(pipeline: Pipeline) -> None:
 def prepare_built_up(pipeline: Pipeline) -> None:
     """Prepare reusable Europe overview masks (also automatic in build europe/run)."""
     pipeline.prepare_built_up()
+
+
+@main.command()
+@locked
+def regions(pipeline: Pipeline) -> None:
+    """Build Germany/state/PLZ overlays and outside masks separately from the basemap."""
+    pipeline.build_regions()
 
 
 @main.command()

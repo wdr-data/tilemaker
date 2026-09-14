@@ -64,6 +64,7 @@ class Settings(BaseSettings):
         ge=1,
         validation_alias="BUILT_UP_WORKERS",
     )
+    regions_maxzoom: int = Field(14, ge=7, le=14, validation_alias="REGIONS_MAXZOOM")
     compile_jobs: int = Field(
         default_factory=lambda: min(os.cpu_count() or 4, 16),
         ge=1,

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import NotRequired, TypedDict
 
 from . import closing as built_up
-from . import inputs, preview, setup, tile_repair
+from . import inputs, preview, regions, setup, tile_repair
 from .logging import log
 from .mbtiles import disjoint
 from .settings import EXTRACT_BOUNDS, NRW_BOUNDS, PROFILES, Settings
@@ -66,12 +66,16 @@ class Pipeline:
         """One full run, with sequential regions to keep peak memory predictable."""
         self.setup()
         self.download()
+        self.build_regions()
         self.extract_nrw()
         self.build("coastline")
         self.build("europe")
         self.build("dach")
         self.build("nrw")
         self.merge()
+
+    def build_regions(self) -> None:
+        regions.build(self.settings)
 
     def extract_nrw(self) -> None:
         settings = self.settings

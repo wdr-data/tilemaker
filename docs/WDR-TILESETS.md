@@ -21,9 +21,10 @@ uv run tiles run
    compile Tilemaker here and a pinned Tippecanoe revision in `.tools/`.
 2. Download and checksum the dated Europe/DACH originals from Geofabrik, then
    renumber them (or reuse supplied renumbered inputs); prepare static shapefiles.
-3. Extract the padded NRW buffer from Europe and renumber it.
-4. Build coastline, Europe, DACH, then NRW, one at a time.
-5. Merge into `OUTPUT_DIR/nrw-v4.mbtiles`, giving NRW priority at shared coordinates.
+3. Build the separate Germany/state/PLZ regions overlay from DACH.
+4. Extract the padded NRW buffer from Europe and renumber it.
+5. Build coastline, Europe, DACH, then NRW, one at a time.
+6. Merge into `OUTPUT_DIR/nrw-v4.mbtiles`, giving NRW priority at shared coordinates.
 
 ## Download and renumber on the server
 
@@ -142,6 +143,7 @@ Run a single step when needed:
 ```bash
 uv run tiles setup
 uv run tiles download
+uv run tiles regions               # Separate overlay; no basemap rebuild needed
 uv run tiles extract-nrw
 uv run tiles build coastline
 uv run tiles prepare-built-up       # Optional: build europe/run do this automatically
@@ -532,3 +534,103 @@ comparison, not a projection for Europe or for z6–9 closing work.
 are normalized to `landuse/class=cemetery`, with the same z11 minimum as
 `landuse=cemetery`. Their existing cemetery POI output is preserved. Both
 burial-ground forms stay outside the built-up overview selection.
+
+
+## Region fills, matching outlines and outside masks
+
+`uv run tiles regions` builds a separate overlay from `DACH_INPUT`. It also runs
+as part of `uv run tiles run`, before the basemap steps. An existing basemap
+can be used immediately; there is no need to merge the overlay into it.
+
+```sh
+OUTPUT_DIR=tilesets/regions-candidate uv run tiles regions
+mbtileserver --port 7001 --dir tilesets/regions-candidate
+```
+
+The first version covers Germany, its 16 federal states and German five-digit
+postal polygons present in the OSM snapshot. It does not claim complete official
+postal coverage or worldwide country coverage. Missing Germany/state geometry
+fails the build instead of publishing a partial administrative overlay.
+
+Outputs:
+
+- `regions.mbtiles`: country polygons from z0, states from z3, postal polygons
+  from z7, through `REGIONS_MAXZOOM` (default 14). Standard vector-source
+  overzoom works above this zoom; reducing it makes high-zoom borders coarser.
+- `regions-outside-DE.geojson` and `regions-outside-DE-NW.geojson`: inverse
+  polygons plus matching boundary lines. Tiling a world-sized outside mask up to
+  z14 would create an unnecessarily huge tileset, so these are separate assets.
+  Serve them as static files alongside other app assets; mbtileserver serves
+  the MBTiles, not these GeoJSON files.
+
+MBTiles source layers are `regions` (polygons) and `region_boundaries` (lines).
+Both retain `id`, `kind`, `code`, and `name` as strings:
+
+| Selection | `id` | `kind` | `code` |
+| --- | --- | --- | --- |
+| Germany | `country:DE` | `country` | `DE` |
+| NRW | `state:DE-NW` | `state` | `DE-NW` |
+| Cologne postcode | `postal:50667` | `postal` | `50667` |
+| Postcode with leading zero | `postal:01067` | `postal` | `01067` |
+
+Use `promoteId: "id"` on the MapLibre vector source if feature-state styling is
+needed. A fill filter such as `["==", "id", "state:DE-NW"]` selects NRW.
+Draw its outline from `region_boundaries` with the same filter, replacing the
+old basemap highlight. Do not draw polygon rings as lines after tile clipping:
+that can expose the artificial tile edges. Here, complete boundary lines are
+extracted before tiling.
+
+At each zoom, polygons are simplified at half a 512px map pixel in Web Mercator
+and rounded to the global 4096-unit MVT grid. Their outlines are derived only
+after that operation, and Tilemaker's extra simplification is disabled for
+these layers. A final pass validates the encoded integer polygons and repairs
+clipping/quantization defects before publication, preserving properties and
+outline data. This avoids the slow triangulation previously seen with damaged
+overview polygons. It does not promise
+identical geometry to the older basemap boundary lines, nor perfect shared-edge
+coverage between independently simplified neighbouring regions. OSM country
+boundaries can include territorial waters; these are administrative areas,
+not coastlines.
+
+The outside-mask files contain features with `role=outside` and `role=outline`.
+Use a GeoJSON source with `tolerance: 0, maxzoom: REGIONS_MAXZOOM` and separate
+fill/line layers filtered by role. Draw the matching outline from this source
+when using the mask. Enclaves, disconnected parts and holes are preserved.
+
+### Try a solid-grey NRW in the game
+
+The app supports an opt-in URL query parameter, `?grey-nrw=1`. Its new regions
+source defaults to the basemap service's sibling `/services/regions` endpoint.
+If the overlay is served separately, start the app with:
+
+```sh
+VITE_REGIONS_URL=http://localhost:7001/services/regions npm run dev
+```
+
+Open the app's normal path with `?grey-nrw=1`. The map canvas waits for the NRW
+mask before appearing, preventing a flash of the geography underneath. If the
+mask fails to load, this opt-in mode keeps the canvas hidden and reports the
+problem in the browser console. Click eligibility uses the rendered region
+polygon, so it agrees with the visible boundary. Confirmation fades the cover
+to transparent in 600ms and follows the existing reveal sequence. The original
+map presentation is used without the parameter; TV label sizes are unchanged.
+
+Build records include the input identity, relevant code, native tools and
+geometry-library versions. Completed matching overlays and masks are reused.
+Use a new output directory when these inputs change. The regions build is
+independent of the four basemap outputs and their merge.
+
+### Local measurement (DACH snapshot 2026-09-10)
+
+The full candidate in `tilesets/regions-tested` contains Germany, all 16 states
+and 8,172 postal regions: 319,812 tiles across z0–14, 303,628,288 bytes
+(about 290 MiB). Total build time was 182.4 seconds with 8 Tilemaker threads.
+This includes 10.8 seconds validating all encoded tiles and repairing 6,829
+polygons in 6,039 tiles. A repeat command reused all three outputs immediately.
+The outside assets are 5,541,252 bytes for Germany and 1,965,582 bytes for NRW,
+before HTTP compression. These measurements apply to this snapshot and machine.
+
+Regression checks cover holes/islands, fill/outline source agreement, complete
+state selection, leading-zero postal identifiers, encoded geometry repair and
+rollback after a later repair batch fails. Browser checks cover grey NRW at
+guessing zoom, confirmation reveal, outside-NRW masking and postal selection.
