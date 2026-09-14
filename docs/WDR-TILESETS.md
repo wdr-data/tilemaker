@@ -634,3 +634,10 @@ Regression checks cover holes/islands, fill/outline source agreement, complete
 state selection, leading-zero postal identifiers, encoded geometry repair and
 rollback after a later repair batch fails. Browser checks cover grey NRW at
 guessing zoom, confirmation reveal, outside-NRW masking and postal selection.
+
+Ferry routes are always emitted as `transportation` lines with `class=ferry`,
+including closed circuits such as Fahrgastschiff Möwe on Halterner Stausee.
+Their route alone does not qualify for built-up classification. Older tiles
+may contain ferry polygons; exclude `class=ferry` from transportation fill
+layers until those tiles are rebuilt. Ferry name lines retain their z12 minimum;
+the route geometry uses z9.

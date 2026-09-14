@@ -690,7 +690,8 @@ function way_function()
 
 	-- 'Ferry'
 	if route=="ferry" then
-		write_to_transportation_layer(9, "ferry", nil, false, nil, false, false, is_closed)
+		-- A closed ferry circuit is still a route, not a surface to fill.
+		write_to_transportation_layer(9, "ferry", nil, false, nil, false, false, false)
 
 		if HasNames() then
 			Layer("transportation_name", false)
