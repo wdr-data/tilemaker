@@ -21,6 +21,7 @@ landcover
 /test.*
 *.mbtiles
 *.osm.pbf
+!test/fixtures/forest-1315781.osm.pbf
 
 /store/
 

@@ -19,3 +19,24 @@ machine-dependent timing threshold or require Node on the build server.
 from the regions overlay generated from Geofabrik DACH 2026-09-10, before final
 integer geometry repair. OSM data © OpenStreetMap contributors, ODbL 1.0.
 It exercises quantization defects while preserving region identifiers and outlines.
+
+## Forest disappearing between z13 and z14
+
+`forest-1315781.osm.pbf` contains OSM relation
+[1315781](https://www.openstreetmap.org/relation/1315781), its 54 member ways and
+referenced nodes, extracted from Geofabrik DACH 2026-09-10. OSM data
+© OpenStreetMap contributors, licensed under ODbL 1.0.
+
+The valid source forest near Jägersief (6.27645, 50.50824) disappeared at z14
+when an invalid z13 clipped polygon was reused from the ancestor cache.
+`test/test_forest_clipping.py` runs the native executable with the production
+NRW config/Lua (without external coastline data). It checks forest coverage,
+two real clearings, polygon validity and MVT ring winding at both zooms,
+with one/four workers and with z14 generated independently. It skips if the
+native executable has not been built. The pre-fix executable fails the test.
+
+To reproduce the fixture from the original, non-renumbered input:
+
+```bash
+osmium getid -r osm/dach-260910.osm.pbf r1315781 -o test/fixtures/forest-1315781.osm.pbf
+```

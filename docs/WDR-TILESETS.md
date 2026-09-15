@@ -279,6 +279,47 @@ The manual repair of the first candidate checked all 9,133 overview tiles;
 its slowest built-up triangulation was about 16 milliseconds locally. Runtime
 figures describe that dataset and machine, not a performance guarantee.
 
+## Native clipping fixes from upstream
+
+The September 2026 upstream review used `upstream/master` at `facdf93`.
+Three geometry changes are backported, retaining the local Lua and zoom policies:
+
+- [4426be9](https://github.com/systemed/tilemaker/commit/4426be9b403afab9da3fb05876b4334c6e41febd)
+  revalidates fast-clip results after removing spikes, allowing the robust
+  intersection fallback to handle remaining self-intersections.
+- [dcdf7b1](https://github.com/systemed/tilemaker/commit/dcdf7b1c1178b283a1b2082a4ba42148d066cb39)
+  normalizes polygon orientation and reverses rings for MVT's downward Y axis;
+  this is a prerequisite for the next backport. Local indentation is normalized.
+- [fff912e](https://github.com/systemed/tilemaker/commit/fff912ee9ae719316fb5caaaf70760a0cc4e4b24)
+  repairs invalid clipped/simplified polygons individually, with a guard against
+  repairs that lose most of a polygon's area. Unsuccessful repairs can still
+  retain invalid geometry, so the final encoded overview/region repair passes
+  remain necessary.
+
+The Jägersief forest regression (OSM relation 1315781) reproduced invalid
+geometry at z13 and missing forest at z14 before the first fix. Both zooms now
+contain valid forest geometry, with genuine clearings preserved. The 12 KB
+fixture runs through the native executable in `test/test_forest_clipping.py`;
+this is a small correctness test, not a Europe-scale performance benchmark.
+
+Recompile an existing checkout before generating a new candidate. Native setup
+only builds Tilemaker when its executable is missing:
+
+```bash
+make -j16 tilemaker
+OUTPUT_DIR=tilesets/clipping-candidate uv run tiles run
+```
+
+Existing MBTiles are unchanged. The pipeline records the executable hash, so
+use a new output directory rather than reusing records made with the old binary.
+
+Other upstream candidates are the allocation/union optimizations (`a5f5d74`),
+attribute-key cache synchronization (`511906a`), resource/error handling
+(`2be5a1d`) and stable lake-label placement (`9f88a21`). They are not included
+in this clipping backport. Benchmark the performance changes separately;
+a full upstream merge also changes OpenMapTiles classifications/configuration
+and would need reconciliation with the WDR policies.
+
 ## Python development checks
 
 Ruff and ty are locked development dependencies, installed by `uv sync` or
